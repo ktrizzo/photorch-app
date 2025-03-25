@@ -37,7 +37,3 @@ jobs:
           pip install -r requirements.txt 
           pip install streamlit 
 
-      - name: Deploy Streamlit App
-        run: |
-          python -m streamlit run app.py --server.headless true
-
