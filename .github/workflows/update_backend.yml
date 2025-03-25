@@ -35,4 +35,5 @@ jobs:
 
       - name: Deploy Streamlit App
         run: |
-          streamlit run app.py --server.headless true  # Replace with your deployment command
+          python -m streamlit run app.py --server.headless true
+
