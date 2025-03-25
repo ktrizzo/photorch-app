@@ -24,13 +24,14 @@ jobs:
           rm -rf backend  # Remove old backend (if any)
           git clone https://github.com/GEMINI-Breeding/photorch backend  # Clone latest backend
 
-      - name: Commit and Push Changes
+      - name: Push updates
         run: |
+          git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
           git add backend
-          git commit -m "Auto-update backend to latest" || echo "No changes to commit"
-          git push origin main
+          git commit -m "Auto-update backend to latest" || exit 0
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/ktrizzo/photorch-app.git main
+
 
       - name: Deploy Streamlit App
         run: |
