@@ -180,7 +180,7 @@ with tabs[0]:
                         if unit == "kPa":
                             y = 0.001 * y   # Convert to MPa
 
-                        if unit == "kPa":
+                        if unit == "-kPa":
                             y = -0.001 * y   # Convert to MPa
 
                         if unit == "-MPa":
@@ -300,8 +300,244 @@ with tabs[1]:
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[2]:
-    st.header("Stomatal Conductance")
-    st.write("This section will include stomatal conductance model fitting.")
+    st.header("Stomatal Conductance Modeling Fitting")
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="stomatal_file_uploader")
+    
+    if uploaded_file is not None:
+        data = pd.read_csv(uploaded_file)
+        st.subheader("Uploaded Spreadsheet")
+        st.dataframe(data)
+
+        # Species filtering
+        species_col = next((col for col in data.columns if col.lower() == "species"), None)
+
+        if species_col:
+            species_list = data[species_col].unique()
+            selected_species = st.selectbox("Select a species", species_list)
+            data = data[data[species_col] == selected_species]
+
+        st.write("### Select Model")
+        
+
+        models = [
+            "Buckley, Turnbull, Adams (2012)",
+            "Ball, Woodrow, Berry (1987)",
+            "Ball-Berry-Leuning (1995)",
+            "Medlyn et al. (2011)"
+        ]
+
+
+        if 'selected_model' not in st.session_state:
+            st.session_state.selected_model = models[0]
+
+        # Create a placeholder for the selected model text
+        selected_model_text = st.empty()
+
+        # Update the placeholder with the latest selection
+        selected_model_text.write(f"**Selected Model:** {st.session_state.selected_model}")
+
+        cols = st.columns(len(models))
+
+        for i, model in enumerate(models):
+            if cols[i].button(model, key=model, use_container_width=True):
+                st.session_state.selected_model = model
+                selected_model_text.write(f"**Selected Model:** {st.session_state.selected_model}")  # Update the text immediately
+
+
+        st.write("### Select Model Input Columns")
+        if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
+            # Initialize session state for X and Y selection
+            if 'x_column' not in st.session_state:
+                st.session_state.x_column = None
+            if 'y_column' not in st.session_state:
+                st.session_state.y_column = None
+            if 'z_column' not in st.session_state:
+                st.session_state.z_column = None
+
+            def select_column(col):
+                if st.session_state.x_column is None:
+                    st.session_state.x_column = col
+                elif st.session_state.y_column is None and col != st.session_state.x_column:
+                    st.session_state.y_column = col
+                elif st.session_state.z_column is None and col not in [st.session_state.x_column, st.session_state.y_column]:
+                    st.session_state.z_column = col
+
+            def clear_x():
+                st.session_state.x_column = None
+
+            def clear_y():
+                st.session_state.y_column = None
+            
+            def clear_z():
+                st.session_state.z_column = None
+
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.write("**Q (Leaf Light Flux, PPFD):**")
+                if st.session_state.x_column:
+                    if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
+                        pass
+                else:
+                    st.write("(Click a column below to select Q)")
+            
+            with col2:
+                st.write("**D (Leaf to Air Vapor Pressure Difference, VPD):**")
+                if st.session_state.y_column:
+                    if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
+                        pass
+                else:
+                    st.write("(Click a column below to select D)")
+            
+            with col3:
+                st.write("**gsw (Stomatal Conductance to Water Vapor):**")
+                if st.session_state.z_column:
+                    if st.button(st.session_state.z_column, key="clear_z", on_click=clear_z):
+                        pass
+                else:
+                    st.write("(Click a column below to select gsw)")
+            
+            # Show buttons for each column in a horizontal layout
+            st.write("### Available Columns")
+            button_container = st.container()
+            cols = button_container.columns(min(len(data.columns), 5))
+            for i, col in enumerate(data.columns):
+                with cols[i % len(cols)]:
+                    if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
+                        pass
+            
+            # Ensure columns are selected before proceeding
+            if st.session_state.x_column and st.session_state.y_column and st.session_state.z_column:
+                x = data[st.session_state.x_column]
+                y = data[st.session_state.y_column]
+                z = data[st.session_state.z_column]
+
+                abs_PAR = 0.85
+
+                # Unit check section
+                st.markdown("---")  # Horizontal divider
+                st.write("### Select Q Units")
+                unit = st.radio("What unit is the given light flux data in?", ["umol/m2/s ambient", "umol/m2/s absorbed", "W/m2 ambient", "W/m2 absorbed"], horizontal=True)   
+
+                if(unit == "umol/m2/s ambient"):
+                    x *= abs_PAR
+                elif(unit == "W/m2 ambient"):
+                    x *= abs_PAR * 4.57 #ref https://www.controlledenvironments.org/wp-content/uploads/sites/6/2017/06/Ch01.pdf
+                elif(unit == "W/m2 absorbed"):
+                    x *= 4.57 
+
+                st.write("### Select D Units")
+                unit = st.radio("What unit is the given leaf VPD data in?", ["kPa", "mol/mol", "mmol/mol"], horizontal=True)     
+
+                if(unit == "kPa"):
+                    y *= 1000.0 / 101.3
+                elif(unit == "mol/mol"):
+                    y *= 1000.0
+
+                # Add an Advanced Options expander before the Fit Model button
+            with st.expander("Advanced Options"):
+                st.write("Customize additional settings for model fitting.")
+
+                # Option to fix elasticity exponent
+                set_PAR_abs = st.checkbox("Set leaf PAR absorbtivity (Default = 0.85)")
+                
+                if set_PAR_abs:
+                    abs_PAR = st.number_input(r"Value", value=0.85, min_value=0.1, max_value=1.0)
+                    x *= abs_PAR/0.85
+
+                if species_col:
+                    fit_all_species = st.checkbox("Fit each species in file?")    
+
+        if(st.session_state.selected_model == "Ball, Woodrow, Berry (1987)"):
+            # Initialize session state for X and Y selection
+            if 'x_column' not in st.session_state:
+                st.session_state.x_column = None
+            if 'y_column' not in st.session_state:
+                st.session_state.y_column = None
+            if 'z_column' not in st.session_state:
+                st.session_state.z_column = None
+
+            def select_column(col):
+                if st.session_state.x_column is None:
+                    st.session_state.x_column = col
+                elif st.session_state.y_column is None and col != st.session_state.x_column:
+                    st.session_state.y_column = col
+                elif st.session_state.z_column is None and col not in [st.session_state.x_column, st.session_state.y_column]:
+                    st.session_state.z_column = col
+
+            def clear_x():
+                st.session_state.x_column = None
+
+            def clear_y():
+                st.session_state.y_column = None
+            
+            def clear_z():
+                st.session_state.z_column = None
+
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.write("**Q (Leaf Light Flux, PPFD):**")
+                if st.session_state.x_column:
+                    if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
+                        pass
+                else:
+                    st.write("(Click a column below to select Q)")
+            
+            with col2:
+                st.write("**D (Leaf to Air Vapor Pressure Difference, VPD):**")
+                if st.session_state.y_column:
+                    if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
+                        pass
+                else:
+                    st.write("(Click a column below to select D)")
+            
+            with col3:
+                st.write("**gsw (Stomatal Conductance to Water Vapor):**")
+                if st.session_state.z_column:
+                    if st.button(st.session_state.z_column, key="clear_z", on_click=clear_z):
+                        pass
+                else:
+                    st.write("(Click a column below to select gsw)")
+            
+            # Show buttons for each column in a horizontal layout
+            st.write("### Available Columns")
+            button_container = st.container()
+            cols = button_container.columns(min(len(data.columns), 5))
+            for i, col in enumerate(data.columns):
+                with cols[i % len(cols)]:
+                    if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
+                        pass
+            
+            # Ensure columns are selected before proceeding
+            if st.session_state.x_column and st.session_state.y_column and st.session_state.z_column:
+                x = data[st.session_state.x_column]
+                y = data[st.session_state.y_column]
+                z = data[st.session_state.z_column]
+
+            # Unit check section
+            st.markdown("---")  # Horizontal divider
+            st.write("### Select A Units")
+            unit = st.radio("What unit is the given photosynthesis data in?", ["umol/m2/s"], horizontal=True)   
+            st.write("### Select Ca Units")
+            unit = st.radio("What unit is the given CO2 data in?", ["umol/mol","ppm"], horizontal=True)         
+
+            # Add an Advanced Options expander before the Fit Model button
+            with st.expander("Advanced Options"):
+                st.write("Customize additional settings for model fitting.")
+
+                # Option to fix elasticity exponent
+                set_PAR_abs = st.checkbox("Set leaf PAR absorbtivity")
+                
+                if set_PAR_abs:
+                    abs_PAR = st.number_input(r"Value", value=0.85, min_value=0.1, max_value=1.0)
+
+                if species_col:
+                    fit_all_species = st.checkbox("Fit each species in file?")
+
+        if st.button("Fit Model"):
+            pass
+
 
 # ---- PROSPECT MODEL ----
 with tabs[3]:
