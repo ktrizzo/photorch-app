@@ -21,8 +21,7 @@ jobs:
 
       - name: Pull Latest Backend
         run: |
-          rm -rf backend  # Remove old backend (if any)
-          git clone https://github.com/GEMINI-Breeding/photorch backend  
+          git submodule update --remote --merge 
 
       - name: Push updates
         run: |
