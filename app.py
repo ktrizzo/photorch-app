@@ -4,22 +4,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-# Define the helper functions
+# Smooth Max
 def smax(a, b, k):
     h = np.maximum(0, 1 - np.abs(a - b) / (4 * k))
     return np.maximum(a, b) + h**2 * k
 
+# Smooth Min
 def smin(a, b, k):
     h = np.maximum(0, 1 - np.abs(a - b) / (4 * k))
     return np.minimum(a, b) - h**2 * k
 
-# Define the mechanistic model
-def mechPV(x, pio, Rtlp, elasticity):
+# Pressure Volume Relationship (psi = f(RWC))
+def PV(x, pio, Rtlp, elasticity):
     R = x
     pi = pio / R
     P = - pio * smax(0, (R - Rtlp) / (1 - Rtlp), 0.01)**elasticity
     psi = P + pi
     return psi
+
+# Buckley, Turnbull, Adams stomatal conductance model (2012)
+def BTA(x, Em, i0, k, b):
+    q,d = x
+    return Em * (q+i0) / (k + b*q + (q+i0) * d)
+
 
 # R-squared function
 def r_squared(y_true, y_pred):
@@ -187,11 +194,11 @@ with tabs[0]:
                             y = -1.0 * y  # Convert to MPa
 
                         try:
-                            popt, _ = curve_fit(mechPV, x, y, p0=p0, bounds=bounds)
+                            popt, _ = curve_fit(PV, x, y, p0=p0, bounds=bounds)
                             pio, Rtlp, elasticity = popt
 
-                            # Compute R² and RMSE
-                            y_pred = mechPV(x, *popt)
+                            # Compute R2 and RMSE
+                            y_pred = PV(x, *popt)
                             r2 = r_squared(y, y_pred)
                             rmse_val = rmse(y, y_pred)
 
@@ -208,7 +215,7 @@ with tabs[0]:
                             # Plot data and fit
                             scatter = ax.plot(x, y, 'o')
                             xx = np.linspace(0.5, 1, 100)
-                            ax.plot(xx, mechPV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
+                            ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
 
                         except Exception as e:
                             st.write(f"Error fitting {species}: {e}")
@@ -237,11 +244,11 @@ with tabs[0]:
                         p0 = [-1, 0.8, 1]
 
                     try:
-                        popt, _ = curve_fit(mechPV, x, y, p0=p0, bounds=bounds)
+                        popt, _ = curve_fit(PV, x, y, p0=p0, bounds=bounds)
                         pio, Rtlp, elasticity = popt  
                         
-                        # Compute R² and RMSE
-                        y_pred = mechPV(x, *popt)
+                        # Compute R2 and RMSE
+                        y_pred = PV(x, *popt)
                         r2 = r_squared(y, y_pred)
                         rmse_val = rmse(y, y_pred)
 
@@ -281,7 +288,7 @@ with tabs[0]:
                         fig, ax = plt.subplots()
                         ax.plot(x, y, 'ko', label="Measured")
                         xx = np.linspace(0.5, 1, 100)
-                        ax.plot(xx, mechPV(xx, *popt), 'r-', label="Modeled")
+                        ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
                         ax.set_xlabel("Relative Water Content (/)")
                         ax.set_ylabel("Leaf Water Potential (MPa)")
                         if species_col:
@@ -477,20 +484,20 @@ with tabs[2]:
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.write("**Q (Leaf Light Flux, PPFD):**")
+                st.write("**A (Assimilation):**")
                 if st.session_state.x_column:
                     if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
                         pass
                 else:
-                    st.write("(Click a column below to select Q)")
+                    st.write("(Click a column below to select A)")
             
             with col2:
-                st.write("**D (Leaf to Air Vapor Pressure Difference, VPD):**")
+                st.write("**Ca (Ambient CO2 Concentration):**")
                 if st.session_state.y_column:
                     if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
                         pass
                 else:
-                    st.write("(Click a column below to select D)")
+                    st.write("(Click a column below to select Ca)")
             
             with col3:
                 st.write("**gsw (Stomatal Conductance to Water Vapor):**")
@@ -536,7 +543,181 @@ with tabs[2]:
                     fit_all_species = st.checkbox("Fit each species in file?")
 
         if st.button("Fit Model"):
-            pass
+            if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
+                if species_col:
+                    if fit_all_species:
+                        st.latex(r"\g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
+
+                        if fix_elasticity:
+                            p0 = [-1, 0.8, fixed_elasticity-0.0001]
+                        else:
+                            p0 = [-1, 0.8, 1]
+                        species_fits = []
+                        fig, ax = plt.subplots()
+
+                        for species in species_list:
+                            data = all_data
+                            species_data = data[data[species_col] == species]
+                            x = species_data[st.session_state.x_column]
+                            y = species_data[st.session_state.y_column]
+
+                            try:
+                                popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
+                                        (x, y), z, p0=p0, bounds=bounds)
+
+                                Em, i0, k, b = popt
+
+
+                                # Compute R2 and RMSE
+                                z_pred = BTA((x,y), *popt)
+                                r2 = r_squared(z, z_pred)
+                                rmse_val = rmse(z, z_pred)
+
+                                # Store results
+                                species_fits.append({
+                                    'species': species,
+                                    'E_m,': round(Em, 4),
+                                    'i_0': round(i0, 4),
+                                    'k': round(k, 4),
+                                    'b': round(b,4),
+                                    'Rsquared': round(r2, 3),
+                                    'RMSE': round(rmse_val, 3)
+                                })
+
+                                # Plot data and fit
+                                scatter = ax.plot(x, y, 'o')
+                                xx = np.linspace(0.5, 1, 100)
+                                ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
+
+                            except Exception as e:
+                                st.write(f"Error fitting {species}: {e}")
+
+                        # Display Table
+                        results_df = pd.DataFrame(species_fits)
+                        st.subheader("Best Fit Parameters for All Species")
+                        st.dataframe(results_df)
+
+                        # Download Button
+                        csv = results_df.to_csv(index=False)
+                        st.download_button("Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
+
+                        # Finalize Plot
+                        ax.set_xlabel("Relative Water Content (/)")
+                        ax.set_ylabel("Leaf Water Potential (MPa)")
+                        ax.legend()
+                        st.pyplot(fig)
+                else:
+                    st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
+                    st.subheader("Best Fit Parameters")
+                    p0 = [5, 10, 5e3, 5]
+                    bounds = ([0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf])
+                    print(x)
+                    try:
+                        popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
+                                        (x, y), z, p0=p0, bounds=bounds)
+
+                        Em, i0, k, b = popt
+
+
+                        # Compute R2 and RMSE
+                        z_pred = BTA((x,y), Em, i0, k, b)
+                        r2 = r_squared(z, z_pred)
+                        rmse_val = rmse(z, z_pred)
+
+                        # Display fitted parameters and metrics
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1: st.latex(r"E_m = " + f"{Em:.2f}")  
+                        with col2: st.latex(r"i_0 = " + f"{i0:.2f}")
+                        with col3: st.latex(r"k = " + f"{k:.2f}")
+                        with col4: st.latex(r"b = " + f"{b:.2f}")
+                        
+                        st.latex(r"R^{2} = " + f"{r2:.3f}")
+                        st.latex(r"RMSE = " + f"{rmse_val:.3f}")
+
+                        # Prepare downloadable results
+                        if(species_col):
+                            results_df = pd.DataFrame({
+                                'species': [selected_species],
+                                'Em': [round(Em,4)],
+                                'i0': [round(i0,4)],
+                                'k': [round(k,4)],
+                                'b': [round(b,4)],
+                                'Rsquared': [round(r2,4)],
+                                'RMSE': [round(rmse_val,4)]
+                            })
+                        else:
+                            results_df = pd.DataFrame({
+                                'Em': [round(Em,4)],
+                                'i0': [round(i0,4)],
+                                'k': [round(k,4)],
+                                'b': [round(b,4)],
+                                'Rsquared': [round(r2,4)],
+                                'RMSE': [round(rmse_val,4)]
+                            })
+                        csv = results_df.to_csv(index=False)
+                        st.dataframe(results_df)
+                        st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
+                        
+
+                        # Plot results
+                        # fig, ax = plt.subplots()
+                        # ax.plot(x, y, 'ko', label="Measured")
+                        # xx = np.linspace(0.5, 1, 100)
+                        # ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
+                        # ax.set_xlabel("Relative Water Content (/)")
+                        # ax.set_ylabel("Leaf Water Potential (MPa)")
+                        # if species_col:
+                        #     ax.set_title(selected_species)
+                        # ax.legend()
+                        # st.pyplot(fig)
+
+                        
+                        Q_meas = x
+                        D_meas = y
+                        gsw_meas = z
+
+                        Q = np.linspace(0,2000,50)    
+                        D = np.linspace(1, 50, 50)   
+                        Q,D = np.meshgrid(Q, D)
+
+                        fig = plt.figure(figsize=(10, 10))
+                        ax1 = fig.add_subplot(1, 1, 1, projection='3d')
+
+                        gsw_modeled = BTA((Q,D), Em,i0,k,b)
+
+
+                        ax1.plot_surface(Q, D, gsw_modeled, cmap='YlGn', edgecolor='none', alpha=0.5, label="BMF Fit")
+                        ax1.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=12)
+                        ax1.set_ylabel(r"$D$ (mmol mol$^{-1}$)", fontsize=12)
+                        ax1.set_zlabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=12)
+                        ax1.view_init(elev=15, azim=15)
+
+                        ax1.scatter(Q_meas, D_meas, gsw_meas, c='r', s=25, label="Measured gsw")
+                        ax1.set_xticks([0,1000,2000])
+                        st.pyplot(fig)
+
+
+                        # Plot 1:1 reference line
+                        gsw_pred = BTA((Q_meas,D_meas), Em,i0,k,b)
+
+                        fig, ax = plt.subplots(figsize=(5, 5))
+
+                        err = np.abs(gsw_meas - gsw_pred) / gsw_meas
+                        ax.scatter(gsw_meas, gsw_pred, c="Green", label="Data",s=20)
+                        min_val = min(gsw_meas.min(), gsw_pred.min())
+                        max_val = max(gsw_meas.max(), gsw_pred.max())
+                        ax.plot([min_val, max_val], [min_val, max_val], "r--", label="1:1 Line")
+
+                        ax.set_xlabel(r"Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+                        ax.set_ylabel(r"Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+                        ax.legend()
+                        ax.grid(True)
+                        st.pyplot(fig)
+
+                        
+                        
+                    except Exception as e:
+                        st.write("Error in fitting:", e)
 
 
 # ---- PROSPECT MODEL ----
