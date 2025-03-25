@@ -55,7 +55,7 @@ with tabs[0]:
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
 
-    st.header("Stomatal Conductance Modeling Fitting")
+    st.header("Stomatal Conductance Model Fitting")
 
     
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="sc_file_uploader")
