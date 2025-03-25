@@ -37,6 +37,7 @@ def r_squared(y_true, y_pred):
 # RMSE function
 def rmse(y_true, y_pred):
     return np.sqrt(np.mean((y_true - y_pred) ** 2))
+    
 
 # Streamlit Interface
 st.title('PhoTorch')
@@ -47,58 +48,59 @@ tabs = st.tabs(["Pressure-Volume", "Photosynthesis", "Stomatal Conductance", "PR
 
 # ---- PRESSURE-VOLUME MODEL ----
 with tabs[0]:
+
     st.header('Pressure-Volume Curve Fitting')
 
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
     
     if uploaded_file is not None:
-        data = pd.read_csv(uploaded_file)
-        all_data = data
+        data_pv = pd.read_csv(uploaded_file)
+        all_data_pv = data_pv
         st.subheader("Uploaded Spreadsheet")
-        st.dataframe(data)
+        st.dataframe(data_pv)
 
         # Species filtering
-        species_col = next((col for col in data.columns if col.lower() == "species"), None)
+        species_col = next((col for col in data_pv.columns if col.lower() == "species"), None)
 
         if species_col:
-            species_list = data[species_col].unique()
-            selected_species = st.selectbox("Select a species", species_list)
-            data = data[data[species_col] == selected_species]
+            species_list = data_pv[species_col].unique()
+            selected_species = st.selectbox("Select a species", species_list, key="pv_species_select")
+            data_pv = data_pv[data_pv[species_col] == selected_species]
 
 
         # Initialize session state for X and Y selection
-        if 'x_column' not in st.session_state:
-            st.session_state.x_column = None
-        if 'y_column' not in st.session_state:
-            st.session_state.y_column = None
+        if 'x_colum_pv' not in st.session_state:
+            st.session_state.x_colum_pv = None
+        if 'y_colum_pv' not in st.session_state:
+            st.session_state.y_colum_pv = None
 
         def select_column(col):
-            if st.session_state.x_column is None:
-                st.session_state.x_column = col
-            elif st.session_state.y_column is None and col != st.session_state.x_column:
-                st.session_state.y_column = col
+            if st.session_state.x_colum_pv is None:
+                st.session_state.x_colum_pv = col
+            elif st.session_state.y_colum_pv is None and col != st.session_state.x_colum_pv:
+                st.session_state.y_colum_pv = col
 
         def clear_x():
-            st.session_state.x_column = None
+            st.session_state.x_colum_pv = None
 
         def clear_y():
-            st.session_state.y_column = None
+            st.session_state.y_colum_pv = None
 
         st.write("### Select X and Y columns")
         col1, col2 = st.columns(2)
         
         with col1:
             st.write("**X (Relative Water Content, RWC):**")
-            if st.session_state.x_column:
-                if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
+            if st.session_state.x_colum_pv:
+                if st.button(st.session_state.x_colum_pv, key="clear_x_pv", on_click=clear_x):
                     pass
             else:
                 st.write("(Click a column below to select X)")
         
         with col2:
             st.write("**Y (Water Potential, Psi):**")
-            if st.session_state.y_column:
-                if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
+            if st.session_state.y_colum_pv:
+                if st.button(st.session_state.y_colum_pv, key="clear_y_pv", on_click=clear_y):
                     pass
             else:
                 st.write("(Click a column below to select Y)")
@@ -106,16 +108,16 @@ with tabs[0]:
         # Show buttons for each column in a horizontal layout
         st.write("### Available Columns")
         button_container = st.container()
-        cols = button_container.columns(min(len(data.columns), 5))
-        for i, col in enumerate(data.columns):
+        cols = button_container.columns(min(len(data_pv.columns), 5))
+        for i, col in enumerate(data_pv.columns):
             with cols[i % len(cols)]:
-                if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
+                if st.button(col, key=f"col_{i}_{col}_pv", on_click=select_column, args=(col,)):
                     pass
         
         # Ensure columns are selected before proceeding
-        if st.session_state.x_column and st.session_state.y_column:
-            x = data[st.session_state.x_column]
-            y = data[st.session_state.y_column]
+        if st.session_state.x_colum_pv and st.session_state.y_colum_pv:
+            x = data_pv[st.session_state.x_colum_pv]
+            y = data_pv[st.session_state.y_colum_pv]
 
             # Unit check section
             st.markdown("---")  # Horizontal divider
@@ -158,9 +160,9 @@ with tabs[0]:
                     bounds = ([-5, 0, 0], [0, 0.99, elasticity_upper_bound])  # Apply upper bound
                 
                 if species_col:
-                    fit_all_species = st.checkbox("Fit each species in file?")
+                    fit_all_species = st.checkbox("Fit each species in file?",key="fit_all_pv")
 
-            if st.button("Fit Model"):
+            if st.button("Fit Model",key="fit_pv"):
 
                 if(fit_all_species):
                     st.latex(r"\psi(R) = -\pi_o \cdot \left(\frac{R - R_{tlp}}{1 - R_{tlp}}\right)^{\epsilon} + \frac{\pi_o}{R}")
@@ -173,10 +175,10 @@ with tabs[0]:
                     fig, ax = plt.subplots()
 
                     for species in species_list:
-                        data = all_data
-                        species_data = data[data[species_col] == species]
-                        x = species_data[st.session_state.x_column]
-                        y = species_data[st.session_state.y_column]
+                        data_pv = all_data_pv
+                        species_data_pv = data_pv[data_pv[species_col] == species]
+                        x = species_data_pv[st.session_state.x_colum_pv]
+                        y = species_data_pv[st.session_state.y_colum_pv]
 
                         if unit == "bar":
                             y = 0.1 * y   # Convert to MPa
@@ -307,21 +309,24 @@ with tabs[1]:
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[2]:
+
     st.header("Stomatal Conductance Modeling Fitting")
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="stomatal_file_uploader")
+
+    
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="sc_file_uploader")
     
     if uploaded_file is not None:
-        data = pd.read_csv(uploaded_file)
+        data_sc = pd.read_csv(uploaded_file)
         st.subheader("Uploaded Spreadsheet")
-        st.dataframe(data)
+        st.dataframe(data_sc)
 
         # Species filtering
-        species_col = next((col for col in data.columns if col.lower() == "species"), None)
+        species_col = next((col for col in data_sc.columns if col.lower() == "species"), None)
 
         if species_col:
-            species_list = data[species_col].unique()
-            selected_species = st.selectbox("Select a species", species_list)
-            data = data[data[species_col] == selected_species]
+            species_list = data_sc[species_col].unique()
+            selected_species = st.selectbox("Select a species", species_list, key="sc_species_select")
+            data_sc = data_sc[data_sc[species_col] == selected_species]
 
         st.write("### Select Model")
         
@@ -354,26 +359,26 @@ with tabs[2]:
         st.write("### Select Model Input Columns")
         if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
             # Initialize session state for X and Y selection
-            if 'x_column' not in st.session_state:
-                st.session_state.x_column = None
-            if 'y_column' not in st.session_state:
-                st.session_state.y_column = None
+            if 'x_colum_sc' not in st.session_state:
+                st.session_state.x_colum_sc = None
+            if 'y_colum_sc' not in st.session_state:
+                st.session_state.y_colum_sc = None
             if 'z_column' not in st.session_state:
                 st.session_state.z_column = None
 
             def select_column(col):
-                if st.session_state.x_column is None:
-                    st.session_state.x_column = col
-                elif st.session_state.y_column is None and col != st.session_state.x_column:
-                    st.session_state.y_column = col
-                elif st.session_state.z_column is None and col not in [st.session_state.x_column, st.session_state.y_column]:
+                if st.session_state.x_colum_sc is None:
+                    st.session_state.x_colum_sc = col
+                elif st.session_state.y_colum_sc is None and col != st.session_state.x_colum_sc:
+                    st.session_state.y_colum_sc = col
+                elif st.session_state.z_column is None and col not in [st.session_state.x_colum_sc, st.session_state.y_colum_sc]:
                     st.session_state.z_column = col
 
             def clear_x():
-                st.session_state.x_column = None
+                st.session_state.x_colum_sc = None
 
             def clear_y():
-                st.session_state.y_column = None
+                st.session_state.y_colum_sc = None
             
             def clear_z():
                 st.session_state.z_column = None
@@ -382,16 +387,16 @@ with tabs[2]:
             
             with col1:
                 st.write("**Q (Leaf Light Flux, PPFD):**")
-                if st.session_state.x_column:
-                    if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
+                if st.session_state.x_colum_sc:
+                    if st.button(st.session_state.x_colum_sc, key="clear_x", on_click=clear_x):
                         pass
                 else:
                     st.write("(Click a column below to select Q)")
             
             with col2:
                 st.write("**D (Leaf to Air Vapor Pressure Difference, VPD):**")
-                if st.session_state.y_column:
-                    if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
+                if st.session_state.y_colum_sc:
+                    if st.button(st.session_state.y_colum_sc, key="clear_y", on_click=clear_y):
                         pass
                 else:
                     st.write("(Click a column below to select D)")
@@ -407,17 +412,17 @@ with tabs[2]:
             # Show buttons for each column in a horizontal layout
             st.write("### Available Columns")
             button_container = st.container()
-            cols = button_container.columns(min(len(data.columns), 5))
-            for i, col in enumerate(data.columns):
+            cols = button_container.columns(min(len(data_sc.columns), 5))
+            for i, col in enumerate(data_sc.columns):
                 with cols[i % len(cols)]:
-                    if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
+                    if st.button(col, key=f"col_{i}_{col}_sc", on_click=select_column, args=(col,)):
                         pass
             
             # Ensure columns are selected before proceeding
-            if st.session_state.x_column and st.session_state.y_column and st.session_state.z_column:
-                x = data[st.session_state.x_column]
-                y = data[st.session_state.y_column]
-                z = data[st.session_state.z_column]
+            if st.session_state.x_colum_sc and st.session_state.y_colum_sc and st.session_state.z_column:
+                x = data_sc[st.session_state.x_colum_sc]
+                y = data_sc[st.session_state.y_colum_sc]
+                z = data_sc[st.session_state.z_column]
 
                 abs_PAR = 0.85
 
@@ -453,30 +458,30 @@ with tabs[2]:
                     x *= abs_PAR/0.85
 
                 if species_col:
-                    fit_all_species = st.checkbox("Fit each species in file?")    
+                    fit_all_species = st.checkbox("Fit each species in file?",key="fit_all_sc")    
 
         if(st.session_state.selected_model == "Ball, Woodrow, Berry (1987)"):
             # Initialize session state for X and Y selection
-            if 'x_column' not in st.session_state:
-                st.session_state.x_column = None
-            if 'y_column' not in st.session_state:
-                st.session_state.y_column = None
+            if 'x_colum_sc' not in st.session_state:
+                st.session_state.x_colum_sc = None
+            if 'y_colum_sc' not in st.session_state:
+                st.session_state.y_colum_sc = None
             if 'z_column' not in st.session_state:
                 st.session_state.z_column = None
 
             def select_column(col):
-                if st.session_state.x_column is None:
-                    st.session_state.x_column = col
-                elif st.session_state.y_column is None and col != st.session_state.x_column:
-                    st.session_state.y_column = col
-                elif st.session_state.z_column is None and col not in [st.session_state.x_column, st.session_state.y_column]:
+                if st.session_state.x_colum_sc is None:
+                    st.session_state.x_colum_sc = col
+                elif st.session_state.y_colum_sc is None and col != st.session_state.x_colum_sc:
+                    st.session_state.y_colum_sc = col
+                elif st.session_state.z_column is None and col not in [st.session_state.x_colum_sc, st.session_state.y_colum_sc]:
                     st.session_state.z_column = col
 
             def clear_x():
-                st.session_state.x_column = None
+                st.session_state.x_colum_sc = None
 
             def clear_y():
-                st.session_state.y_column = None
+                st.session_state.y_colum_sc = None
             
             def clear_z():
                 st.session_state.z_column = None
@@ -485,16 +490,16 @@ with tabs[2]:
             
             with col1:
                 st.write("**A (Assimilation):**")
-                if st.session_state.x_column:
-                    if st.button(st.session_state.x_column, key="clear_x", on_click=clear_x):
+                if st.session_state.x_colum_sc:
+                    if st.button(st.session_state.x_colum_sc, key="clear_x", on_click=clear_x):
                         pass
                 else:
                     st.write("(Click a column below to select A)")
             
             with col2:
                 st.write("**Ca (Ambient CO2 Concentration):**")
-                if st.session_state.y_column:
-                    if st.button(st.session_state.y_column, key="clear_y", on_click=clear_y):
+                if st.session_state.y_colum_sc:
+                    if st.button(st.session_state.y_colum_sc, key="clear_y", on_click=clear_y):
                         pass
                 else:
                     st.write("(Click a column below to select Ca)")
@@ -510,17 +515,17 @@ with tabs[2]:
             # Show buttons for each column in a horizontal layout
             st.write("### Available Columns")
             button_container = st.container()
-            cols = button_container.columns(min(len(data.columns), 5))
-            for i, col in enumerate(data.columns):
+            cols = button_container.columns(min(len(data_sc.columns), 5))
+            for i, col in enumerate(data_sc.columns):
                 with cols[i % len(cols)]:
                     if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
                         pass
             
             # Ensure columns are selected before proceeding
-            if st.session_state.x_column and st.session_state.y_column and st.session_state.z_column:
-                x = data[st.session_state.x_column]
-                y = data[st.session_state.y_column]
-                z = data[st.session_state.z_column]
+            if st.session_state.x_colum_sc and st.session_state.y_colum_sc and st.session_state.z_column:
+                x = data_sc[st.session_state.x_colum_sc]
+                y = data_sc[st.session_state.y_colum_sc]
+                z = data_sc[st.session_state.z_column]
 
             # Unit check section
             st.markdown("---")  # Horizontal divider
@@ -542,7 +547,7 @@ with tabs[2]:
                 if species_col:
                     fit_all_species = st.checkbox("Fit each species in file?")
 
-        if st.button("Fit Model"):
+        if st.button("Fit Model",key = "fit_sc"):
             if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
                 if species_col:
                     if fit_all_species:
@@ -556,10 +561,10 @@ with tabs[2]:
                         fig, ax = plt.subplots()
 
                         for species in species_list:
-                            data = all_data
-                            species_data = data[data[species_col] == species]
-                            x = species_data[st.session_state.x_column]
-                            y = species_data[st.session_state.y_column]
+                            data_sc = all_data_sc
+                            species_data_sc = data_sc[data_sc[species_col] == species]
+                            x = species_data_sc[st.session_state.x_colum_sc]
+                            y = species_data_sc[st.session_state.y_colum_sc]
 
                             try:
                                 popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
@@ -718,7 +723,6 @@ with tabs[2]:
                         
                     except Exception as e:
                         st.write("Error in fitting:", e)
-
 
 # ---- PROSPECT MODEL ----
 with tabs[3]:
