@@ -3,3 +3,5 @@ matplotlib
 streamlit
 pandas
 scipy
+torch
+openpyxl
