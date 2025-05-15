@@ -1,8 +1,31 @@
+import sys
+import os
+
+# Define the backend path explicitly
+backend_path = '/Users/ktrizzo/Documents/code/Git Projects/photorch-app/backend'
+
+# Remove any unwanted paths (like the old src path)
+unwanted_path = '/Users/ktrizzo/Documents/code/Git Projects/PhoTorch edits/photorch/src'
+if unwanted_path in sys.path:
+    sys.path.remove(unwanted_path)
+
+# Add the backend path to sys.path (only if it's not already included)
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# Print sys.path for debugging purposes
+print("sys.path:", sys.path)
+
+
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from backend.fvcb import fitaci
+from backend.fvcb import initphotodata
+from backend.util import *
 
 # Smooth Max
 def smax(a, b, k):
@@ -37,6 +60,79 @@ def r_squared(y_true, y_pred):
 # RMSE function
 def rmse(y_true, y_pred):
     return np.sqrt(np.mean((y_true - y_pred) ** 2))
+
+def fit_photosynthesis(df):
+    # User Settings Section
+    species_to_fit = st.text_input("Enter species name", "Iceberg")
+    species_variety = st.text_input("Enter species variety", "Calmar")
+
+    # User Inputs for fitting settings
+    LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
+    TemperatureResponseType = st.selectbox("Select Temperature Response Type", [1, 2], index=1)
+    Fitgm = st.checkbox("Fit gm (Mesophyll conductance)", value=False)
+    FitGamma = st.checkbox("Fit Gamma", value=False)
+    FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
+    FitKo = st.checkbox("Fit Ko (Oxygenation)", value=False)
+    saveParameters = st.checkbox("Save Parameters", value=True)
+    plotResultingFit = st.checkbox("Plot Resulting Fit", value=True)
+
+    # Advanced Hyperparameters Section
+    learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
+    iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=10000)
+
+    if st.button("Fit"):
+        # Initialize LICOR data object
+        lcd = initphotodata.initLicordata(df, preprocess=True)
+        device_fit = 'cpu'
+        lcd.todevice(torch.device(device_fit))
+
+        # Status message
+        if species_variety == "":
+            st.write(f"Fitting {species_to_fit}")
+        else:
+            st.write(f"Fitting {species_to_fit} var. {species_variety}")
+
+        # Initialize FvCB model
+        fvcb = fitaci.initM.FvCB(
+            lcd,
+            LightResp_type=LightResponseType,
+            TempResp_type=TemperatureResponseType,
+            onefit=True,
+            fitgamma=FitGamma,
+            fitKc=FitKc,
+            fitKo=FitKo,
+            fitgm=Fitgm
+        )
+
+        # Run the fitting process
+        fitresult = fitaci.run(
+            fvcb,
+            learn_rate=learningRate,
+            maxiteration=iterations,
+            minloss=1,
+            recordweightsTF=False
+        )
+        fvcb = fitresult.model
+
+        # Display parameters
+        st.write("FvCB Model Parameters:")
+        printFvCBParameters(fvcb, LightResponseType, TemperatureResponseType, Fitgm, FitGamma, FitKc, FitKo)
+
+        # Save parameters if selected
+        # if saveParameters:
+        #     parameterPath = saveFvCBParametersToFile(species_to_fit, species_variety, fvcb, LightResponseType,
+        #                                                 TemperatureResponseType, Fitgm, FitGamma, FitKc, FitKo)
+        #     st.write(f"Parameters saved at: {parameterPath}")
+
+        # # Plot the resulting fit if selected
+        # if plotResultingFit:
+        #     plotFvCBModelFit(species_to_fit, species_variety, parameterPath, fitting_group_folder_path)
+        #     st.write("Model Fit Plot")
+        #     # Display plot (ensure the plot function returns the correct figure object)
+        #     st.pyplot()
+    else:
+        st.write("Press the button to fit the photosynthesis model")
+
     
 
 # Streamlit Interface
@@ -50,13 +146,207 @@ tabs = st.tabs(["Photosynthesis", "Stomatal Conductance", "Pressure-Volume","PRO
 # ---- PHOTOSYNTHESIS MODEL ----
 with tabs[0]:
     st.header("Photosynthesis Model")
-    st.write("This section will include photosynthesis model fitting.")
+    # File uploader
+    uploaded_files = st.file_uploader("Upload multiple photosynthesis data files", type=["txt", "xlsx"], accept_multiple_files=True)
+
+    if uploaded_files:
+        dfs = []
+        for file in uploaded_files:
+            # Read and drop the first row (header)
+            if file.name.endswith(".txt"):
+                df = pd.read_csv(file, skiprows=66)
+            else:
+                df = pd.read_excel(file, skiprows=14)
+            df = df.drop(index=0).reset_index(drop=True)
+            dfs.append(df)
+
+        # Concatenate all dataframes
+        df = pd.concat(dfs, ignore_index=True)
+        df["CurveID"] = 0
+        st.success(f"✅ Loaded {len(df)} rows from {len(uploaded_files)} files.")
+        st.dataframe(df.head(),hide_index=True)
+
+        # Try auto-detecting Q, T, Ci, A
+        default_cols = {
+            "Q": "Qabs",
+            "T": "Tleaf",
+            "Ci": "Ci",
+            "A": "A"
+        }
+
+        found_cols = {}
+        for key, colname in default_cols.items():
+            found_cols[key] = colname if colname in df.columns else None
+
+        # Check if all required columns were found
+        if all(found_cols.values()):
+            st.subheader("Auto-Detected Columns For Fitting")
+            #st.write({k: found_cols[k] for k in ["Q", "T", "Ci", "A"]})
+            selected_data = df[[found_cols["Q"], found_cols["T"], found_cols["Ci"], found_cols["A"]]].copy()
+            selected_data.columns = ["Q", "T", "Ci", "A"]
+            st.dataframe(selected_data.head(),hide_index=True)
+
+            # Store in session state for downstream use
+            st.session_state["selected_data"] = selected_data
+
+            if st.button("Reselect Columns"):
+                st.session_state["reselect_columns"] = True
+
+        else:
+            st.warning("Could not auto-detect all required columns. Please select manually.")
+            st.session_state["reselect_columns"] = True
+
+        # ---- MANUAL COLUMN SELECTION ----
+        if st.session_state.get("reselect_columns", False):
+            st.write("### Select Model Columns")
+
+            col_options = list(df.columns)
+
+            q_col = st.selectbox("Qabs (Light)", col_options, index=col_options.index(found_cols["Q"]) if found_cols["Q"] else 0)
+            t_col = st.selectbox("Tleaf (Temperature)", col_options, index=col_options.index(found_cols["T"]) if found_cols["T"] else 1)
+            ci_col = st.selectbox("Ci (Internal CO₂)", col_options, index=col_options.index(found_cols["Ci"]) if found_cols["Ci"] else 2)
+            a_col = st.selectbox("A (Assimilation)", col_options, index=col_options.index(found_cols["A"]) if found_cols["A"] else 3)
+
+            selected_data = df[[q_col, t_col, ci_col, a_col]].copy()
+            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A"]
+            st.dataframe(selected_data.head(),hide_index=True)
+
+            st.session_state["selected_data"] = selected_data
+        
+        #st.write("Model fitting process will be implemented here.")
+        species_to_fit = st.text_input("Enter species name", "Iceberg")
+        species_variety = st.text_input("Enter species variety", "Calmar")
+
+        # User Inputs for fitting settings
+        LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
+        TemperatureResponseType = st.selectbox("Select Temperature Response Type", [1, 2], index=1)
+        Fitgm = st.checkbox("Fit gm (Mesophyll conductance)", value=False)
+        FitGamma = st.checkbox("Fit Gamma (Photorespiration)", value=False)
+        FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
+        FitKo = st.checkbox("Fit Ko (Oxygenation)", value=False)
+        saveParameters = st.checkbox("Save Parameters", value=True)
+        plotResultingFit = st.checkbox("Plot Resulting Fit", value=True)
+
+        # Advanced Hyperparameters Section
+        learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
+        iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=10000)
+
+        for col in ["Qabs", "Tleaf", "Ci", "A"]:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Drop rows with any NaNs (caused by bad conversions)
+        df = df.dropna().reset_index(drop=True)
+
+        if st.button("Fit"):
+            # Initialize LICOR data object
+            lcd = initphotodata.initLicordata(df, preprocess=True)
+            device_fit = 'cpu'
+            lcd.todevice(torch.device(device_fit))
+
+            
+            # Initialize FvCB model
+            fvcb = fitaci.initM.FvCB(
+                lcd,
+                LightResp_type=LightResponseType,
+                TempResp_type=TemperatureResponseType,
+                onefit=True,
+                fitgamma=FitGamma,
+                fitKc=FitKc,
+                fitKo=FitKo,
+                fitgm=Fitgm
+            )
+            with st.spinner(f"Fitting {species_to_fit}..."):
+                # Run the fitting process
+                fitresult = fitaci.run(
+                    fvcb,
+                    learn_rate=learningRate,
+                    maxiteration=iterations,
+                    minloss=1,
+                    recordweightsTF=False
+                )
+                fvcb = fitresult.model
+
+            # Display parameters
+            printFvCBParameters(fvcb, LightResponseType, TemperatureResponseType, Fitgm, FitGamma, FitKc, FitKo)
+            param_dict = {
+                "Vcmax25": fvcb.Vcmax25.item(),
+                "Jmax25": fvcb.Jmax25.item(),
+                "Vcmax_dHa": fvcb.TempResponse.dHa_Vcmax.item(),
+                "Jmax_dHa": fvcb.TempResponse.dHa_Jmax.item(),
+                "alpha": fvcb.LightResponse.alpha.item()
+            }
+
+            if LightResponseType == 2:
+                param_dict["theta"] = fvcb.LightResponse.theta.item()
+            if Fitgm:
+                param_dict["gm"] = fvcb.gm.item()
+            if FitGamma:
+                param_dict["Gamma25"] = fvcb.Gamma25.item()
+            if FitKc:
+                param_dict["Kc"] = fvcb.Kc25.item()
+            if FitKo:
+                param_dict["Ko"] = fvcb.Ko25.item()
+
+            df = pd.DataFrame(param_dict.items(), columns=["Parameter", "Value"])
+            
+            st.markdown("### Fitted FvCB Parameters")
+            st.dataframe(df, hide_index=True)
+
+
+            filename = f"{species_to_fit}_{species_variety}_FvCB_Parameters.csv"
+            savepath = os.path.join("results", "parameters", filename)
+            os.makedirs(os.path.dirname(savepath), exist_ok=True)
+
+            vars = ["species", "variety", "Vcmax25", "Jmax25", "TPU25", "Rd25", "alpha", "theta", "Vcmax_dHa", "Vcmax_Topt", "Vcmax_dHd",
+                    "Jmax_dHa", "Jmax_Topt", "Jmax_dHd", "TPU_dHa", "TPU_Topt", "TPU_dHd", "Rd_dHa", "Gamma25", "Gamma_dHa",
+                    "Kc25", "Kc_dHa", "Ko25", "Ko_dHa", "O"]
+            
+            # Helper for placeholder value
+            def t2(x): return x.item() if TemperatureResponseType == 2 else 99999
+            def t1(x): return x.item() if TemperatureResponseType == 2 else 1
+
+            theta = fvcb.LightResponse.theta.item() if LightResponseType == 2 else 0.0
+
+            vals = [
+                species_to_fit,
+                species_variety,
+                fvcb.Vcmax25.item(),
+                fvcb.Jmax25.item(),
+                fvcb.TPU25.item(),
+                fvcb.Rd25.item(),
+                fvcb.LightResponse.alpha.item(),
+                theta,
+                fvcb.TempResponse.dHa_Vcmax.item(),
+                t2(fvcb.TempResponse.Topt_Vcmax),
+                t1(fvcb.TempResponse.dHd_Vcmax),
+                fvcb.TempResponse.dHa_Jmax.item(),
+                t2(fvcb.TempResponse.Topt_Jmax),
+                t1(fvcb.TempResponse.dHd_Jmax),
+                fvcb.TempResponse.dHa_TPU.item(),
+                t2(fvcb.TempResponse.Topt_TPU),
+                t1(fvcb.TempResponse.dHd_TPU),
+                fvcb.TempResponse.dHa_Rd.item(),
+                fvcb.Gamma25.item(),
+                fvcb.TempResponse.dHa_Gamma.item(),
+                fvcb.Kc25.item(),
+                fvcb.TempResponse.dHa_Kc.item(),
+                fvcb.Ko25.item(),
+                fvcb.TempResponse.dHa_Ko.item(),
+                fvcb.Oxy.item()
+            ]
+
+            df_out = pd.DataFrame([vals], columns=vars)
+            df_out.to_csv(savepath, index=False)
+            st.success(f"✅ Parameters saved to: `{savepath}`")
+
+            # Optional: make downloadable in Streamlit
+            with open(savepath, "rb") as f:
+                st.download_button("Download Parameters CSV", f, file_name=filename, mime="text/csv")
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
 
     st.header("Stomatal Conductance Model Fitting")
-
     
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="sc_file_uploader")
     
