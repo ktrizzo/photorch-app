@@ -274,7 +274,7 @@ with tabs[0]:
 
 
         if st.session_state.get("fit_done", False):
-            st.success(f"✅ Parameters saved as: `{st.session_state["last_filename"]}`")
+            st.success(f"✅ Parameters saved as: `{st.session_state['last_filename']}`")
             st.dataframe(st.session_state["last_param_table"], hide_index=True)
             st.download_button(
                 "Download Parameters CSV",
