@@ -4,3 +4,4 @@ streamlit
 pandas
 scipy
 torch
+openpyxl
