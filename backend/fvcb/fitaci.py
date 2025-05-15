@@ -16,7 +16,7 @@ class modelresult():
         self.losses = loss_all
         self.recordweights = allweights
 
-def run(fvcbm:initM.FvCB, learn_rate = 0.6, maxiteration = 20000, minloss = 3, recordweightsTF = False, fitcorr = False, ApCithreshold = 600, weakconstiter = 10000, printout = True):
+def run(fvcbm:initM.FvCB, learn_rate = 0.6, maxiteration = 20000, minloss = 3, recordweightsTF = False, fitcorr = False, ApCithreshold = 600, weakconstiter = 10000, printout = True,progress_callback=[]):
     start_time = time.time()
     device = fvcbm.lcd.device
     if device == 'cuda':
@@ -60,6 +60,10 @@ def run(fvcbm:initM.FvCB, learn_rate = 0.6, maxiteration = 20000, minloss = 3, r
         loss.backward()
         if (iter + 1) % 200 == 0 and printout:
             print(f'Loss at iter {iter}: {loss.item():.4f}')
+            percent = iter/maxiteration * 100;
+            if(progress_callback):
+                progress_callback.text(f"Fitting... {percent:.1f}% complete")
+
 
         optimizer.step()
         scheduler.step()

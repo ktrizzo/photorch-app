@@ -61,79 +61,6 @@ def r_squared(y_true, y_pred):
 def rmse(y_true, y_pred):
     return np.sqrt(np.mean((y_true - y_pred) ** 2))
 
-def fit_photosynthesis(df):
-    # User Settings Section
-    species_to_fit = st.text_input("Enter species name", "Iceberg")
-    species_variety = st.text_input("Enter species variety", "Calmar")
-
-    # User Inputs for fitting settings
-    LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
-    TemperatureResponseType = st.selectbox("Select Temperature Response Type", [1, 2], index=1)
-    Fitgm = st.checkbox("Fit gm (Mesophyll conductance)", value=False)
-    FitGamma = st.checkbox("Fit Gamma", value=False)
-    FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
-    FitKo = st.checkbox("Fit Ko (Oxygenation)", value=False)
-    saveParameters = st.checkbox("Save Parameters", value=True)
-    plotResultingFit = st.checkbox("Plot Resulting Fit", value=True)
-
-    # Advanced Hyperparameters Section
-    learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
-    iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=10000)
-
-    if st.button("Fit"):
-        # Initialize LICOR data object
-        lcd = initphotodata.initLicordata(df, preprocess=True)
-        device_fit = 'cpu'
-        lcd.todevice(torch.device(device_fit))
-
-        # Status message
-        if species_variety == "":
-            st.write(f"Fitting {species_to_fit}")
-        else:
-            st.write(f"Fitting {species_to_fit} var. {species_variety}")
-
-        # Initialize FvCB model
-        fvcb = fitaci.initM.FvCB(
-            lcd,
-            LightResp_type=LightResponseType,
-            TempResp_type=TemperatureResponseType,
-            onefit=True,
-            fitgamma=FitGamma,
-            fitKc=FitKc,
-            fitKo=FitKo,
-            fitgm=Fitgm
-        )
-
-        # Run the fitting process
-        fitresult = fitaci.run(
-            fvcb,
-            learn_rate=learningRate,
-            maxiteration=iterations,
-            minloss=1,
-            recordweightsTF=False
-        )
-        fvcb = fitresult.model
-
-        # Display parameters
-        st.write("FvCB Model Parameters:")
-        printFvCBParameters(fvcb, LightResponseType, TemperatureResponseType, Fitgm, FitGamma, FitKc, FitKo)
-
-        # Save parameters if selected
-        # if saveParameters:
-        #     parameterPath = saveFvCBParametersToFile(species_to_fit, species_variety, fvcb, LightResponseType,
-        #                                                 TemperatureResponseType, Fitgm, FitGamma, FitKc, FitKo)
-        #     st.write(f"Parameters saved at: {parameterPath}")
-
-        # # Plot the resulting fit if selected
-        # if plotResultingFit:
-        #     plotFvCBModelFit(species_to_fit, species_variety, parameterPath, fitting_group_folder_path)
-        #     st.write("Model Fit Plot")
-        #     # Display plot (ensure the plot function returns the correct figure object)
-        #     st.pyplot()
-    else:
-        st.write("Press the button to fit the photosynthesis model")
-
-    
 
 # Streamlit Interface
 st.title('PhoTorch')
@@ -148,6 +75,11 @@ with tabs[0]:
     st.header("Photosynthesis Model")
     # File uploader
     uploaded_files = st.file_uploader("Upload multiple photosynthesis data files", type=["txt", "xlsx"], accept_multiple_files=True)
+    uploaded_filenames = [file.name for file in uploaded_files] if uploaded_files else []
+
+    if uploaded_filenames != st.session_state.get("last_uploaded_files", []):
+        st.session_state["fit_done"] = False
+        st.session_state["last_uploaded_files"] = uploaded_filenames
 
     if uploaded_files:
         dfs = []
@@ -234,17 +166,14 @@ with tabs[0]:
         for col in ["Qabs", "Tleaf", "Ci", "A"]:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Drop rows with any NaNs (caused by bad conversions)
         df = df.dropna().reset_index(drop=True)
 
         if st.button("Fit"):
-            # Initialize LICOR data object
+            st.session_state["fit_done"] = True
             lcd = initphotodata.initLicordata(df, preprocess=True)
             device_fit = 'cpu'
             lcd.todevice(torch.device(device_fit))
-
             
-            # Initialize FvCB model
             fvcb = fitaci.initM.FvCB(
                 lcd,
                 LightResp_type=LightResponseType,
@@ -255,14 +184,15 @@ with tabs[0]:
                 fitKo=FitKo,
                 fitgm=Fitgm
             )
-            with st.spinner(f"Fitting {species_to_fit}..."):
-                # Run the fitting process
+            with st.spinner(""):
+                progress_text = st.empty()
                 fitresult = fitaci.run(
                     fvcb,
                     learn_rate=learningRate,
                     maxiteration=iterations,
                     minloss=1,
-                    recordweightsTF=False
+                    recordweightsTF=False,
+                    progress_callback = progress_text
                 )
                 fvcb = fitresult.model
 
@@ -288,13 +218,10 @@ with tabs[0]:
                 param_dict["Ko"] = fvcb.Ko25.item()
 
             df = pd.DataFrame(param_dict.items(), columns=["Parameter", "Value"])
-            
-            st.markdown("### Fitted FvCB Parameters")
-            st.dataframe(df, hide_index=True)
-
-
             filename = f"{species_to_fit}_{species_variety}_FvCB_Parameters.csv"
             savepath = os.path.join("results", "parameters", filename)
+
+        
             os.makedirs(os.path.dirname(savepath), exist_ok=True)
 
             vars = ["species", "variety", "Vcmax25", "Jmax25", "TPU25", "Rd25", "alpha", "theta", "Vcmax_dHa", "Vcmax_Topt", "Vcmax_dHd",
@@ -337,11 +264,24 @@ with tabs[0]:
 
             df_out = pd.DataFrame([vals], columns=vars)
             df_out.to_csv(savepath, index=False)
-            st.success(f"✅ Parameters saved to: `{savepath}`")
 
-            # Optional: make downloadable in Streamlit
             with open(savepath, "rb") as f:
-                st.download_button("Download Parameters CSV", f, file_name=filename, mime="text/csv")
+                file_bytes = f.read()
+
+            st.session_state["last_param_table"] = df
+            st.session_state["last_filename"] = filename
+            st.session_state["last_file_bytes"] = file_bytes
+
+
+        if st.session_state.get("fit_done", False):
+            st.success(f"✅ Parameters saved as: `{st.session_state["last_filename"]}`")
+            st.dataframe(st.session_state["last_param_table"], hide_index=True)
+            st.download_button(
+                "Download Parameters CSV",
+                st.session_state["last_file_bytes"],
+                file_name=st.session_state["last_filename"],
+                mime="text/csv"
+            )
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
