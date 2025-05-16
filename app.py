@@ -553,7 +553,7 @@ with tabs[1]:
                             'RMSE': [round(rmse_val,4)]
                         })
                     csv = results_df.to_csv(index=False)
-                    st.dataframe(results_df)
+                    st.dataframe(results_df,hide_index=True)
                     st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
                     
 
