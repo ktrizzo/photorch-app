@@ -26,6 +26,10 @@ from scipy.optimize import curve_fit
 from backend.fvcb import fitaci
 from backend.fvcb import initphotodata
 from backend.util import *
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif"
+})
 
 # Smooth Max
 def smax(a, b, k):
@@ -287,417 +291,405 @@ with tabs[0]:
 with tabs[1]:
 
     st.header("Stomatal Conductance Model Fitting")
-    
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],key="sc_file_uploader")
-    
-    if uploaded_file is not None:
-        data_sc = pd.read_csv(uploaded_file)
-        st.subheader("Uploaded Spreadsheet")
-        st.dataframe(data_sc)
+    uploaded_file = st.file_uploader("Upload stomatal conductance data file", type=["csv", "xlsx"])
+    if uploaded_file:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
 
-        # Species filtering
-        species_col = next((col for col in data_sc.columns if col.lower() == "species"), None)
+        st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
+        st.dataframe(df.head(), hide_index=True)
+        species_col = "species" if "species" in df.columns else None
 
-        if species_col:
-            species_list = data_sc[species_col].unique()
-            selected_species = st.selectbox("Select a species", species_list, key="sc_species_select")
-            data_sc = data_sc[data_sc[species_col] == selected_species]
+        # ---- MODEL SELECTION ----
+        model_name = st.selectbox("Select Stomatal Conductance Model", ["Buckley, Turnbull, Adams (2012)", "Medlyn et al. (2011)",  "Leuning et al. (1995)", "Ball, Woodrow, Berry (1987)"])
+        if(model_name=="Buckley, Turnbull, Adams (2012)"):
+            st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
 
-        st.write("### Select Model")
+        if(model_name=="Medlyn et al. (2011)"):
+            st.latex(r"g_{sw}(A,D,C_a) = g_0 + \left(1+\frac{g_1}{\sqrt{D}}\right)\frac{A}{C_a}")
+
+        if(model_name=="Leuning et al. (1995)"):
+            st.latex(r"g_{sw}(A,C_s,\Gamma) = g_0 + \frac{g_1 A}{(C_s - \Gamma)(1+\frac{D}{D_0})}")
         
+        if(model_name=="Ball, Woodrow, Berry (1987)"):
+            st.latex(r"g_{sw}(A,H,C_s) = g_0 + g_1 A \frac{H}{C_s}")
+        # ---- MODEL-SPECIFIC REQUIRED COLUMNS ----
+        model_required_cols = {
+            "Buckley, Turnbull, Adams (2012)": ["gsw", "Qabs", "D"],
+            "Medlyn et al. (2011)": ["gsw", "A", "D", "Ca"],
+            "Leuning et al. (1995)" : ["gsw", "A", "D"],
+            "Ball, Woodrow, Berry (1987)": ["gsw", "A", "Cs", "H"]
+        }
 
-        models = [
-            "Buckley, Turnbull, Adams (2012)",
-            "Ball, Woodrow, Berry (1987)",
-            "Ball-Berry-Leuning (1995)",
-            "Medlyn et al. (2011)"
-        ]
+        # ---- MODEL-SPECIFIC COLUMN OPTIONS FOR AUTO-DETECT ----
+        model_column_options = {
+            "gsw": ["g", "gs", "gsw"],
+            "A": ["A", "An", "Anet", "Assimilation"],
+            "Cs": ["Cs","cs","Ca","ca"],
+            "Ca": ["Ca", "ca"],
+            "H": ["RH", "rh","H","h","rh_s","RHsam","RH_sam"],
+            "Tleaf": ["Tleaf", "T", "Temp"],
+            "D": ["VPDleaf","VPD", "vpd","D"],
+            "Qamb": ["PPFD", "Q", "Qin", "Qamb","PAR"],
+            "Qabs": ["PPFD", "Q", "Qin", "Qamb","PAR"],
+            "Gamma" : ["Gamma","gamma","compensation_point"]
+        }
 
+        required_keys = model_required_cols[model_name]
+        found_cols = {}
 
-        if 'selected_model' not in st.session_state:
-            st.session_state.selected_model = models[0]
+        # ---- AUTO-DETECTION ----
+        for key in required_keys:
+            options = model_column_options.get(key, [])
+            found = next((col for col in df.columns if col in options), None)
+            found_cols[key] = found
 
-        # Create a placeholder for the selected model text
-        selected_model_text = st.empty()
+        if all(found_cols.values()):
+            st.subheader("Auto-Detected Columns For Fitting")
+            selected_data = df[[found_cols[k] for k in required_keys]].copy()
+            selected_data.columns = required_keys
+            st.dataframe(selected_data.head(), hide_index=True)
 
-        # Update the placeholder with the latest selection
-        selected_model_text.write(f"**Selected Model:** {st.session_state.selected_model}")
+            st.session_state["selected_data"] = selected_data
 
-        cols = st.columns(len(models))
+            st.session_state["reselect_gs_columns"] = False
 
-        for i, model in enumerate(models):
-            if cols[i].button(model, key=model, use_container_width=True):
-                st.session_state.selected_model = model
-                selected_model_text.write(f"**Selected Model:** {st.session_state.selected_model}")  # Update the text immediately
+            if st.button("Reselect Columns Manually"):
+                st.session_state["reselect_gs_columns"] = True
+        else:
+            st.warning("Could not auto-detect all required columns for this model. Please select manually.")
+            st.session_state["reselect_gs_columns"] = True
 
+        # ---- MANUAL COLUMN SELECTION ----
+        if st.session_state.get("reselect_gs_columns", False):
+            st.write(f"### Select Columns for {model_name}")
 
-        st.write("### Select Model Input Columns")
-        if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
-            # Initialize session state for X and Y selection
-            if 'x_colum_sc' not in st.session_state:
-                st.session_state.x_colum_sc = None
-            if 'y_colum_sc' not in st.session_state:
-                st.session_state.y_colum_sc = None
-            if 'z_column' not in st.session_state:
-                st.session_state.z_column = None
+            col_options = list(df.columns)
+            manual_selection = {}
 
-            def select_column(col):
-                if st.session_state.x_colum_sc is None:
-                    st.session_state.x_colum_sc = col
-                elif st.session_state.y_colum_sc is None and col != st.session_state.x_colum_sc:
-                    st.session_state.y_colum_sc = col
-                elif st.session_state.z_column is None and col not in [st.session_state.x_colum_sc, st.session_state.y_colum_sc]:
-                    st.session_state.z_column = col
+            for key in required_keys:
+                default_index = col_options.index(found_cols[key]) if found_cols[key] in col_options else 0
+                manual_selection[key] = st.selectbox(f"{key}", col_options, index=default_index)
 
-            def clear_x():
-                st.session_state.x_colum_sc = None
+            selected_data = df[[manual_selection[k] for k in required_keys]].copy()
+            selected_data.columns = required_keys
+            st.dataframe(selected_data.head(), hide_index=True)
 
-            def clear_y():
-                st.session_state.y_colum_sc = None
-            
-            def clear_z():
-                st.session_state.z_column = None
+            st.session_state["selected_data"] = selected_data
+        
+        # --- UNIT CONVERSIONS ---
+        st.markdown("---")
 
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.write("**Q (Leaf Light Flux, PPFD):**")
-                if st.session_state.x_colum_sc:
-                    if st.button(st.session_state.x_colum_sc, key="clear_x", on_click=clear_x):
-                        pass
-                else:
-                    st.write("(Click a column below to select Q)")
-            
-            with col2:
-                st.write("**D (Leaf to Air Vapor Pressure Difference, VPD):**")
-                if st.session_state.y_colum_sc:
-                    if st.button(st.session_state.y_colum_sc, key="clear_y", on_click=clear_y):
-                        pass
-                else:
-                    st.write("(Click a column below to select D)")
-            
-            with col3:
-                st.write("**gsw (Stomatal Conductance to Water Vapor):**")
-                if st.session_state.z_column:
-                    if st.button(st.session_state.z_column, key="clear_z", on_click=clear_z):
-                        pass
-                else:
-                    st.write("(Click a column below to select gsw)")
-            
-            # Show buttons for each column in a horizontal layout
-            st.write("### Available Columns")
-            button_container = st.container()
-            cols = button_container.columns(min(len(data_sc.columns), 5))
-            for i, col in enumerate(data_sc.columns):
-                with cols[i % len(cols)]:
-                    if st.button(col, key=f"col_{i}_{col}_sc", on_click=select_column, args=(col,)):
-                        pass
-            
-            # Ensure columns are selected before proceeding
-            if st.session_state.x_colum_sc and st.session_state.y_colum_sc and st.session_state.z_column:
-                x = data_sc[st.session_state.x_colum_sc]
-                y = data_sc[st.session_state.y_colum_sc]
-                z = data_sc[st.session_state.z_column]
+        abs_PAR = 0.85
 
-                abs_PAR = 0.85
+        gsw_candidates = ["g", "gs", "gsw"]
+        gsw_col = next((col for col in selected_data.columns if col in gsw_candidates), None)
 
-                # Unit check section
-                st.markdown("---")  # Horizontal divider
-                st.write("### Select Q Units")
-                unit = st.radio("What unit is the given light flux data in?", ["umol/m2/s ambient", "umol/m2/s absorbed", "W/m2 ambient", "W/m2 absorbed"], horizontal=True)   
+        # Light-related unit conversions
+        light_candidates = ["PPFD", "Q", "Qin", "Qamb", "PAR", "Qabs"]
+        light_col = next((col for col in selected_data.columns if col in light_candidates), None)
 
-                if(unit == "umol/m2/s ambient"):
-                    x *= abs_PAR
-                elif(unit == "W/m2 ambient"):
-                    x *= abs_PAR * 4.57 #ref https://www.controlledenvironments.org/wp-content/uploads/sites/6/2017/06/Ch01.pdf
-                elif(unit == "W/m2 absorbed"):
-                    x *= 4.57 
+        if light_col:
+            st.write("### Select Q (Light) Units")
+            q_unit = st.radio(
+                "What unit is the given light flux data in?",
+                ["μmol/m²/s ambient", "μmol/m²/s absorbed", "W/m² ambient", "W/m² absorbed"],
+                horizontal=True,
+                key="q_unit_radio"
+            )
 
-                st.write("### Select D Units")
-                unit = st.radio("What unit is the given leaf VPD data in?", ["kPa", "mol/mol", "mmol/mol"], horizontal=True)     
+            if q_unit == "μmol/m²/s ambient":
+                selected_data[light_col] *= abs_PAR
+            elif q_unit == "W/m² ambient":
+                selected_data[light_col] *= abs_PAR * 4.57
+            elif q_unit == "W/m² absorbed":
+                selected_data[light_col] *= 4.57
+            # else: μmol/m²/s absorbed, do nothing
 
-                if(unit == "kPa"):
-                    y *= 1000.0 / 101.3
-                elif(unit == "mol/mol"):
-                    y *= 1000.0
+        # VPD-related unit conversions
+        vpd_candidates = ["VPD", "vpd", "VPDleaf", "D"]
+        vpd_col = next((col for col in selected_data.columns if col in vpd_candidates), None)
 
-                # Add an Advanced Options expander before the Fit Model button
-            with st.expander("Advanced Options"):
-                st.write("Customize additional settings for model fitting.")
+        if vpd_col:
+            st.write("### Select D (VPD) Units")
+            d_unit = st.radio(
+                "What unit is the given leaf VPD data in?",
+                ["kPa", "mol/mol", "mmol/mol"],
+                horizontal=True,
+                key="d_unit_radio"
+            )
 
-                # Option to fix elasticity exponent
-                set_PAR_abs = st.checkbox("Set leaf PAR absorbtivity (Default = 0.85)")
-                
-                if set_PAR_abs:
-                    abs_PAR = st.number_input(r"Value", value=0.85, min_value=0.1, max_value=1.0)
-                    x *= abs_PAR/0.85
+            if d_unit == "kPa":
+                selected_data[vpd_col] *= 1000.0 / 101.3  # Convert kPa to mmol/mol
+            elif d_unit == "mol/mol":
+                selected_data[vpd_col] *= 1000.0
+            # else: mmol/mol, no change
 
-                if species_col:
-                    fit_all_species = st.checkbox("Fit each species in file?",key="fit_all_sc")    
+        # --- ADVANCED OPTIONS ---
+        with st.expander("Advanced Options"):
+            st.write("Customize additional settings for model fitting.")
 
-        if(st.session_state.selected_model == "Ball, Woodrow, Berry (1987)"):
-            # Initialize session state for X and Y selection
-            if 'x_colum_sc' not in st.session_state:
-                st.session_state.x_colum_sc = None
-            if 'y_colum_sc' not in st.session_state:
-                st.session_state.y_colum_sc = None
-            if 'z_column' not in st.session_state:
-                st.session_state.z_column = None
+            # set_PAR_abs = st.checkbox("Set leaf PAR absorptivity (default = 0.85)", key="custom_par_check")
+            # if set_PAR_abs:
+            #     new_abs_PAR = st.number_input("Leaf PAR absorptivity", min_value=0.1, max_value=1.0, value=0.85, step=0.01)
+            #     selected_data[light_col] *= new_abs_PAR / abs_PAR 
+            #     abs_PAR = new_abs_PAR 
 
-            def select_column(col):
-                if st.session_state.x_colum_sc is None:
-                    st.session_state.x_colum_sc = col
-                elif st.session_state.y_colum_sc is None and col != st.session_state.x_colum_sc:
-                    st.session_state.y_colum_sc = col
-                elif st.session_state.z_column is None and col not in [st.session_state.x_colum_sc, st.session_state.y_colum_sc]:
-                    st.session_state.z_column = col
-
-            def clear_x():
-                st.session_state.x_colum_sc = None
-
-            def clear_y():
-                st.session_state.y_colum_sc = None
-            
-            def clear_z():
-                st.session_state.z_column = None
-
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.write("**A (Assimilation):**")
-                if st.session_state.x_colum_sc:
-                    if st.button(st.session_state.x_colum_sc, key="clear_x", on_click=clear_x):
-                        pass
-                else:
-                    st.write("(Click a column below to select A)")
-            
-            with col2:
-                st.write("**Ca (Ambient CO2 Concentration):**")
-                if st.session_state.y_colum_sc:
-                    if st.button(st.session_state.y_colum_sc, key="clear_y", on_click=clear_y):
-                        pass
-                else:
-                    st.write("(Click a column below to select Ca)")
-            
-            with col3:
-                st.write("**gsw (Stomatal Conductance to Water Vapor):**")
-                if st.session_state.z_column:
-                    if st.button(st.session_state.z_column, key="clear_z", on_click=clear_z):
-                        pass
-                else:
-                    st.write("(Click a column below to select gsw)")
-            
-            # Show buttons for each column in a horizontal layout
-            st.write("### Available Columns")
-            button_container = st.container()
-            cols = button_container.columns(min(len(data_sc.columns), 5))
-            for i, col in enumerate(data_sc.columns):
-                with cols[i % len(cols)]:
-                    if st.button(col, key=f"col_{col}", on_click=select_column, args=(col,)):
-                        pass
-            
-            # Ensure columns are selected before proceeding
-            if st.session_state.x_colum_sc and st.session_state.y_colum_sc and st.session_state.z_column:
-                x = data_sc[st.session_state.x_colum_sc]
-                y = data_sc[st.session_state.y_colum_sc]
-                z = data_sc[st.session_state.z_column]
-
-            # Unit check section
-            st.markdown("---")  # Horizontal divider
-            st.write("### Select A Units")
-            unit = st.radio("What unit is the given photosynthesis data in?", ["umol/m2/s"], horizontal=True)   
-            st.write("### Select Ca Units")
-            unit = st.radio("What unit is the given CO2 data in?", ["umol/mol","ppm"], horizontal=True)         
-
-            # Add an Advanced Options expander before the Fit Model button
-            with st.expander("Advanced Options"):
-                st.write("Customize additional settings for model fitting.")
-
-                # Option to fix elasticity exponent
-                set_PAR_abs = st.checkbox("Set leaf PAR absorbtivity")
-                
-                if set_PAR_abs:
-                    abs_PAR = st.number_input(r"Value", value=0.85, min_value=0.1, max_value=1.0)
-
-                if species_col:
-                    fit_all_species = st.checkbox("Fit each species in file?")
+            if species_col:
+                fit_all_species = st.checkbox("Fit each species in file?", key="fit_all_sc")
 
         if st.button("Fit Model",key = "fit_sc"):
-            if(st.session_state.selected_model == "Buckley, Turnbull, Adams (2012)"):
-                if species_col:
-                    if fit_all_species:
-                        st.latex(r"\g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
+            if model_name == "Buckley, Turnbull, Adams (2012)":
+                x = selected_data[light_col]
+                y = selected_data[vpd_col]
+                z = selected_data[gsw_col]
 
-                        if fix_elasticity:
-                            p0 = [-1, 0.8, fixed_elasticity-0.0001]
-                        else:
-                            p0 = [-1, 0.8, 1]
-                        species_fits = []
-                        fig, ax = plt.subplots()
+                # if species_col:
+                #     if fit_all_species:
+                #         st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
 
-                        for species in species_list:
-                            data_sc = all_data_sc
-                            species_data_sc = data_sc[data_sc[species_col] == species]
-                            x = species_data_sc[st.session_state.x_colum_sc]
-                            y = species_data_sc[st.session_state.y_colum_sc]
+                #         species_fits = []
+                #         fig, ax = plt.subplots()
 
-                            try:
-                                popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
-                                        (x, y), z, p0=p0, bounds=bounds)
+                #         for species in species_list:
+                #             data_sc = all_data_sc
+                #             species_data_sc = data_sc[data_sc[species_col] == species]
+                #             x = species_data_sc[st.session_state.x_colum_sc]
+                #             y = species_data_sc[st.session_state.y_colum_sc]
 
-                                Em, i0, k, b = popt
+                #             try:
+                #                 popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
+                #                         (x, y), z, p0=p0, bounds=bounds)
 
-
-                                # Compute R2 and RMSE
-                                z_pred = BTA((x,y), *popt)
-                                r2 = r_squared(z, z_pred)
-                                rmse_val = rmse(z, z_pred)
-
-                                # Store results
-                                species_fits.append({
-                                    'species': species,
-                                    'E_m,': round(Em, 4),
-                                    'i_0': round(i0, 4),
-                                    'k': round(k, 4),
-                                    'b': round(b,4),
-                                    'Rsquared': round(r2, 3),
-                                    'RMSE': round(rmse_val, 3)
-                                })
-
-                                # Plot data and fit
-                                scatter = ax.plot(x, y, 'o')
-                                xx = np.linspace(0.5, 1, 100)
-                                ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
-
-                            except Exception as e:
-                                st.write(f"Error fitting {species}: {e}")
-
-                        # Display Table
-                        results_df = pd.DataFrame(species_fits)
-                        st.subheader("Best Fit Parameters for All Species")
-                        st.dataframe(results_df)
-
-                        # Download Button
-                        csv = results_df.to_csv(index=False)
-                        st.download_button("Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
-
-                        # Finalize Plot
-                        ax.set_xlabel("Relative Water Content (/)")
-                        ax.set_ylabel("Leaf Water Potential (MPa)")
-                        ax.legend()
-                        st.pyplot(fig)
-                else:
-                    st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
-                    st.subheader("Best Fit Parameters")
-                    p0 = [5, 10, 5e3, 5]
-                    bounds = ([0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf])
-                    print(x)
-                    try:
-                        popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
-                                        (x, y), z, p0=p0, bounds=bounds)
-
-                        Em, i0, k, b = popt
+                #                 Em, i0, k, b = popt
 
 
-                        # Compute R2 and RMSE
-                        z_pred = BTA((x,y), Em, i0, k, b)
-                        r2 = r_squared(z, z_pred)
-                        rmse_val = rmse(z, z_pred)
+                #                 # Compute R2 and RMSE
+                #                 z_pred = BTA((x,y), *popt)
+                #                 r2 = r_squared(z, z_pred)
+                #                 rmse_val = rmse(z, z_pred)
 
-                        # Display fitted parameters and metrics
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1: st.latex(r"E_m = " + f"{Em:.2f}")  
-                        with col2: st.latex(r"i_0 = " + f"{i0:.2f}")
-                        with col3: st.latex(r"k = " + f"{k:.2f}")
-                        with col4: st.latex(r"b = " + f"{b:.2f}")
-                        
-                        st.latex(r"R^{2} = " + f"{r2:.3f}")
-                        st.latex(r"RMSE = " + f"{rmse_val:.3f}")
+                #                 # Store results
+                #                 species_fits.append({
+                #                     'species': species,
+                #                     'E_m,': round(Em, 4),
+                #                     'i_0': round(i0, 4),
+                #                     'k': round(k, 4),
+                #                     'b': round(b,4),
+                #                     'Rsquared': round(r2, 3),
+                #                     'RMSE': round(rmse_val, 3)
+                #                 })
 
-                        # Prepare downloadable results
-                        if(species_col):
-                            results_df = pd.DataFrame({
-                                'species': [selected_species],
-                                'Em': [round(Em,4)],
-                                'i0': [round(i0,4)],
-                                'k': [round(k,4)],
-                                'b': [round(b,4)],
-                                'Rsquared': [round(r2,4)],
-                                'RMSE': [round(rmse_val,4)]
-                            })
-                        else:
-                            results_df = pd.DataFrame({
-                                'Em': [round(Em,4)],
-                                'i0': [round(i0,4)],
-                                'k': [round(k,4)],
-                                'b': [round(b,4)],
-                                'Rsquared': [round(r2,4)],
-                                'RMSE': [round(rmse_val,4)]
-                            })
-                        csv = results_df.to_csv(index=False)
-                        st.dataframe(results_df)
-                        st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
-                        
+                #                 # Plot data and fit
+                #                 scatter = ax.plot(x, y, 'o')
+                #                 xx = np.linspace(0.5, 1, 100)
+                #                 ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
 
-                        # Plot results
-                        # fig, ax = plt.subplots()
-                        # ax.plot(x, y, 'ko', label="Measured")
-                        # xx = np.linspace(0.5, 1, 100)
-                        # ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
-                        # ax.set_xlabel("Relative Water Content (/)")
-                        # ax.set_ylabel("Leaf Water Potential (MPa)")
-                        # if species_col:
-                        #     ax.set_title(selected_species)
-                        # ax.legend()
-                        # st.pyplot(fig)
+                #             except Exception as e:
+                #                 st.write(f"Error fitting {species}: {e}")
 
-                        
-                        Q_meas = x
-                        D_meas = y
-                        gsw_meas = z
+                #         # Display Table
+                #         results_df = pd.DataFrame(species_fits)
+                #         st.subheader("Best Fit Parameters for All Species")
+                #         st.dataframe(results_df)
 
-                        Q = np.linspace(0,2000,50)    
-                        D = np.linspace(1, 50, 50)   
-                        Q,D = np.meshgrid(Q, D)
+                #         # Download Button
+                #         csv = results_df.to_csv(index=False)
+                #         st.download_button("Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
 
-                        fig = plt.figure(figsize=(10, 10))
-                        ax1 = fig.add_subplot(1, 1, 1, projection='3d')
+                #         # Finalize Plot
+                #         ax.set_xlabel("Relative Water Content (/)")
+                #         ax.set_ylabel("Leaf Water Potential (MPa)")
+                #         ax.legend()
+                #         st.pyplot(fig)
+                # else:
+                st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
+                st.subheader("Best Fit Parameters")
+                p0 = [5, 10, 5e3, 5]
+                bounds = ([0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf])
+                print(x)
+                try:
+                    popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
+                                    (x, y), z, p0=p0, bounds=bounds)
 
-                        gsw_modeled = BTA((Q,D), Em,i0,k,b)
+                    Em, i0, k, b = popt
 
 
-                        ax1.plot_surface(Q, D, gsw_modeled, cmap='YlGn', edgecolor='none', alpha=0.5, label="BMF Fit")
-                        ax1.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=12)
-                        ax1.set_ylabel(r"$D$ (mmol mol$^{-1}$)", fontsize=12)
-                        ax1.set_zlabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=12)
-                        ax1.view_init(elev=15, azim=15)
+                    # Compute R2 and RMSE
+                    z_pred = BTA((x,y), Em, i0, k, b)
+                    r2 = r_squared(z, z_pred)
+                    rmse_val = rmse(z, z_pred)
 
-                        ax1.scatter(Q_meas, D_meas, gsw_meas, c='r', s=25, label="Measured gsw")
-                        ax1.set_xticks([0,1000,2000])
-                        st.pyplot(fig)
+                    # Display fitted parameters and metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1: st.latex(r"E_m = " + f"{Em:.2f}")  
+                    with col2: st.latex(r"i_0 = " + f"{i0:.2f}")
+                    with col3: st.latex(r"k = " + f"{k:.2f}")
+                    with col4: st.latex(r"b = " + f"{b:.2f}")
+                    
+                    st.latex(r"R^{2} = " + f"{r2:.3f}")
+                    st.latex(r"RMSE = " + f"{rmse_val:.3f}")
+
+                    # Prepare downloadable results
+                    if(species_col):
+                        results_df = pd.DataFrame({
+                            #'species': [selected_species],
+                            'Em': [round(Em,4)],
+                            'i0': [round(i0,4)],
+                            'k': [round(k,4)],
+                            'b': [round(b,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    else:
+                        results_df = pd.DataFrame({
+                            'Em': [round(Em,4)],
+                            'i0': [round(i0,4)],
+                            'k': [round(k,4)],
+                            'b': [round(b,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    csv = results_df.to_csv(index=False)
+                    st.dataframe(results_df)
+                    st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
+                    
+
+                    # Plot results
+                    # fig, ax = plt.subplots()
+                    # ax.plot(x, y, 'ko', label="Measured")
+                    # xx = np.linspace(0.5, 1, 100)
+                    # ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
+                    # ax.set_xlabel("Relative Water Content (/)")
+                    # ax.set_ylabel("Leaf Water Potential (MPa)")
+                    # if species_col:
+                    #     ax.set_title(selected_species)
+                    # ax.legend()
+                    # st.pyplot(fig)
+
+                    
+                    Q_meas = x
+                    D_meas = y
+                    gsw_meas = z
+
+                    
+
+                    # Plot Light Resp
+                    Q_meas = x
+                    D_meas = y
+                    gsw_meas = z
+
+                    Q = np.linspace(0,2000,50)    
+                    D = np.linspace(5, 5, 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = BTA((Q,D), Em,i0,k,b)
 
 
-                        # Plot 1:1 reference line
-                        gsw_pred = BTA((Q_meas,D_meas), Em,i0,k,b)
+                    ax.plot(Q, gsw_modeled,linewidth=4,color="r",label="BMF Fit")
+                    ax.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
 
-                        fig, ax = plt.subplots(figsize=(5, 5))
 
-                        err = np.abs(gsw_meas - gsw_pred) / gsw_meas
-                        ax.scatter(gsw_meas, gsw_pred, c="Green", label="Data",s=20)
-                        min_val = min(gsw_meas.min(), gsw_pred.min())
-                        max_val = max(gsw_meas.max(), gsw_pred.max())
-                        ax.plot([min_val, max_val], [min_val, max_val], "r--", label="1:1 Line")
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
 
-                        ax.set_xlabel(r"Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=13)
-                        ax.set_ylabel(r"Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=13)
-                        ax.legend()
-                        ax.grid(True)
-                        st.pyplot(fig)
+                    ax.scatter(Q_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.set_xticks([0,1000,2000])
+                    st.pyplot(fig)
 
-                        
-                        
-                    except Exception as e:
-                        st.write("Error in fitting:", e)
+                    # Plot VPD Resp
+
+                    Q_meas = x
+                    D_meas = y
+                    gsw_meas = z
+
+                    Q = np.linspace(2000,2000,50)    
+                    D = np.linspace(1, 55, 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = BTA((Q,D), Em,i0,k,b)
+
+
+                    ax.plot(D, gsw_modeled,linewidth=4,color="r")
+                    ax.set_xlabel(r"$D$ (mmol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+                    ax.set_xlim([5,60])
+
+
+                    ax.scatter(D_meas, gsw_meas, c="k", s=25)
+                    st.pyplot(fig)
+
+
+                    # Plot 1:1 Modeled-Measured
+
+                    gsw_pred = BTA((Q_meas,D_meas), Em,i0,k,b)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    err = np.abs(gsw_meas - gsw_pred) / gsw_meas
+                    ax.scatter(gsw_meas, gsw_pred, c="k", label="Data",s=25)
+                    min_val = min(gsw_meas.min(), gsw_pred.min())
+                    max_val = max(gsw_meas.max(), gsw_pred.max())
+                    ax.plot([min_val, max_val], [min_val, max_val], "r", label="1:1 Line",linewidth=4)
+
+                    ax.set_xlabel(r"Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+                    ax.legend(fontsize=16)
+                    ax.grid(True)
+                    st.pyplot(fig)
+
+                    # Plot 3D Surface
+
+                    Q = np.linspace(0,2000,50)    
+                    D = np.linspace(5, 40, 50)   
+                    Q,D = np.meshgrid(Q, D)
+
+                    fig = plt.figure(figsize=(10, 10))
+                    ax = fig.add_subplot(1, 1, 1, projection='3d')
+                    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+                    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+                    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+
+                    gsw_modeled = BTA((Q,D), Em,i0,k,b)
+
+                    ax.scatter(Q_meas, D_meas, gsw_meas, c='k', s=25, label="Measured gsw")
+
+                    ax.plot_surface(Q, D, gsw_modeled, color="r",edgecolor='none', alpha=0.8, label="BMF Fit")
+                    ax.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=12)
+                    ax.set_ylabel(r"$D$ (mmol mol$^{-1}$)", fontsize=12)
+                    ax.set_zlabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=12)
+                    ax.view_init(elev=2, azim=20)
+
+                    ax.set_facecolor('white') 
+                    fig.patch.set_facecolor('white') 
+                    ax.grid(False,which="major")
+
+                    ax.scatter(Q_meas, D_meas, gsw_meas, c='k', s=25, label="Measured gsw")
+                    ax.set_xticks([0,1000,2000])
+                    ax.set_zlim([0,max(1,max(gsw_meas)*1.1)])
+
+                    st.pyplot(fig)
+
+                    
+                    
+                except Exception as e:
+                    st.write("Error in fitting:", e)
 
 # ---- PRESSURE-VOLUME MODEL ----
 with tabs[2]:
