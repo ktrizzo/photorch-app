@@ -74,7 +74,7 @@ tabs = st.tabs(["Photosynthesis", "Stomatal Conductance", "Pressure-Volume","PRO
 
 # ---- PHOTOSYNTHESIS MODEL ----
 with tabs[0]:
-    st.header("Photosynthesis Model")
+    st.header("Photosynthesis Model Fitting")
     # File uploader
     uploaded_files = st.file_uploader("Upload multiple photosynthesis data files", type=["txt", "xlsx"], accept_multiple_files=True)
     uploaded_filenames = [file.name for file in uploaded_files] if uploaded_files else []
@@ -203,10 +203,13 @@ with tabs[0]:
             param_dict = {
                 "Vcmax25": fvcb.Vcmax25.item(),
                 "Jmax25": fvcb.Jmax25.item(),
-                "Vcmax_dHa": fvcb.TempResponse.dHa_Vcmax.item(),
-                "Jmax_dHa": fvcb.TempResponse.dHa_Jmax.item(),
-                "alpha": fvcb.LightResponse.alpha.item()
             }
+
+            if TemperatureResponseType == 2:
+                param_dict["Vcmax_Topt"] = fvcb.TempResponse.Topt_Vcmax.item()
+                param_dict["Jmax_Topt"] = fvcb.TempResponse.Topt_Jmax.item()
+
+            param_dict["alpha"] = fvcb.LightResponse.alpha.item()
 
             if LightResponseType == 2:
                 param_dict["theta"] = fvcb.LightResponse.theta.item()
