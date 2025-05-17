@@ -231,8 +231,11 @@ with tabs[0]:
                     "Kc25", "Kc_dHa", "Ko25", "Ko_dHa", "O"]
             
             # Helper for placeholder value
-            def t2(x): return x.item() if TemperatureResponseType == 2 else 99999
-            def t1(x): return x.item() if TemperatureResponseType == 2 else 1
+            def t2(x_name):
+                return getattr(fvcb.TempResponse, x_name).item() if TemperatureResponseType == 2 and hasattr(fvcb.TempResponse, x_name) else 99999
+
+            def t1(x_name):
+                return getattr(fvcb.TempResponse, x_name).item() if TemperatureResponseType == 2 and hasattr(fvcb.TempResponse, x_name) else 1
 
             theta = fvcb.LightResponse.theta.item() if LightResponseType == 2 else 0.0
 
@@ -245,22 +248,22 @@ with tabs[0]:
                 fvcb.Rd25.item(),
                 fvcb.LightResponse.alpha.item(),
                 theta,
-                fvcb.TempResponse.dHa_Vcmax.item(),
-                t2(fvcb.TempResponse.Topt_Vcmax),
-                t1(fvcb.TempResponse.dHd_Vcmax),
-                fvcb.TempResponse.dHa_Jmax.item(),
-                t2(fvcb.TempResponse.Topt_Jmax),
-                t1(fvcb.TempResponse.dHd_Jmax),
-                fvcb.TempResponse.dHa_TPU.item(),
-                t2(fvcb.TempResponse.Topt_TPU),
-                t1(fvcb.TempResponse.dHd_TPU),
-                fvcb.TempResponse.dHa_Rd.item(),
+                fvcb.TempResponse.dHa_Vcmax.item() if hasattr(fvcb.TempResponse, "dHa_Vcmax") else 99999,
+                t2("Topt_Vcmax"),
+                t1("dHd_Vcmax"),
+                fvcb.TempResponse.dHa_Jmax.item() if hasattr(fvcb.TempResponse, "dHa_Jmax") else 99999,
+                t2("Topt_Jmax"),
+                t1("dHd_Jmax"),
+                fvcb.TempResponse.dHa_TPU.item() if hasattr(fvcb.TempResponse, "dHa_TPU") else 99999,
+                t2("Topt_TPU"),
+                t1("dHd_TPU"),
+                fvcb.TempResponse.dHa_Rd.item() if hasattr(fvcb.TempResponse, "dHa_Rd") else 99999,
                 fvcb.Gamma25.item(),
-                fvcb.TempResponse.dHa_Gamma.item(),
+                fvcb.TempResponse.dHa_Gamma.item() if hasattr(fvcb.TempResponse, "dHa_Gamma") else 99999,
                 fvcb.Kc25.item(),
-                fvcb.TempResponse.dHa_Kc.item(),
+                fvcb.TempResponse.dHa_Kc.item() if hasattr(fvcb.TempResponse, "dHa_Kc") else 99999,
                 fvcb.Ko25.item(),
-                fvcb.TempResponse.dHa_Ko.item(),
+                fvcb.TempResponse.dHa_Ko.item() if hasattr(fvcb.TempResponse, "dHa_Ko") else 99999,
                 fvcb.Oxy.item()
             ]
 
