@@ -163,7 +163,7 @@ with tabs[0]:
 
         # Advanced Hyperparameters Section
         learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
-        iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=10000)
+        iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=1500)
 
         for col in ["Qabs", "Tleaf", "Ci", "A"]:
             df[col] = pd.to_numeric(df[col], errors='coerce')
