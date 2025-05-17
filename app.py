@@ -26,7 +26,7 @@ from scipy.optimize import curve_fit
 from backend.fvcb import fitaci
 from backend.fvcb import initphotodata
 from backend.util import *
-mpl.rcParams['font.family'] = 'serif'
+plt.rcParams['font.family'] = 'serif'
 
 
 # Smooth Max
