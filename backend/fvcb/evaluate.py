@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def evaluateFvCB(x, p):
     """
@@ -16,6 +17,12 @@ def evaluateFvCB(x, p):
     numpy.ndarray
         Net assimilation rates for the given inputs.
     """
+
+    # Ensure p is a dict of scalars
+    if isinstance(p, pd.DataFrame):
+        p = p.iloc[0].to_dict()
+    elif isinstance(p, pd.Series):
+        p = p.to_dict()
 
     # Constants
     R = 0.008314

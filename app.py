@@ -23,6 +23,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 from backend.fvcb import fitaci
 from backend.fvcb import initphotodata
 from backend.util import *
@@ -170,9 +171,7 @@ with tabs[0]:
         FitGamma = st.checkbox("Fit Gamma (Photorespiration)", value=False)
         FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
         FitKo = st.checkbox("Fit Ko (Oxygenation)", value=False)
-        saveParameters = st.checkbox("Save Parameters", value=True)
-        plotResultingFit = st.checkbox("Plot Resulting Fit", value=True)
-
+        
         # Advanced Hyperparameters Section
         learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
         iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=1500)
@@ -282,26 +281,150 @@ with tabs[0]:
                 fvcb.Oxy.item()
             ]
 
-            df_out = pd.DataFrame([vals], columns=vars)
-            df_out.to_csv(savepath, index=False)
+            params = pd.DataFrame([vals], columns=vars)
+            params.to_csv(savepath, index=False)
 
             with open(savepath, "rb") as f:
                 file_bytes = f.read()
 
             st.session_state["last_param_table"] = df
+            st.session_state["last_param_dict"] = params
             st.session_state["last_filename"] = filename
             st.session_state["last_file_bytes"] = file_bytes
 
 
         if st.session_state.get("fit_done", False):
             st.success(f"✅ Parameters saved as: `{st.session_state['last_filename']}`")
-            st.dataframe(st.session_state["last_param_table"], hide_index=True)
+            st.dataframe(st.session_state["last_param_dict"],hide_index=True)
             st.download_button(
                 "Download Parameters CSV",
                 st.session_state["last_file_bytes"],
                 file_name=st.session_state["last_filename"],
                 mime="text/csv"
             )
+            
+            df = st.session_state["selected_data"]
+            Q_meas = df["Qabs"].values
+            Ci_meas = df["Ci"].values
+            Tleaf_meas = df["Tleaf"].values + 273.15  # convert to K if needed
+            A_meas = df["A"].values
+
+            p = st.session_state["last_param_dict"];
+
+
+
+            # ---------------- LIGHT RESPONSE ----------------
+            Q = np.linspace(0, 2000, 60)
+            Ci = np.full_like(Q, 300)
+            T = np.full_like(Q, 25 + 273.15)
+
+            x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
+            A = evaluateFvCB(x, p)
+
+            fig, ax = plt.subplots(figsize=(10, 10))
+            ax.plot(Q, A, "r", linewidth=4, label="FvCB Fit at Ci=300, T=25")
+
+            filtered_df = df[
+                (df["Ci"] >= 290) & (df["Ci"] <= 310) &
+                (df["Tleaf"] >= 24.5) & (df["Tleaf"] <= 25.5)
+            ]
+            ax.scatter(df["Qabs"], df["A"], c="gainsboro", s=25, label="All Measured A")
+            ax.scatter(filtered_df["Qabs"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
+
+            ax.set_xlabel(r"$Q_{abs}$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax.set_ylabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax.tick_params(axis='both', labelsize=14)
+            for spine in ax.spines.values():
+                spine.set_linewidth(2)
+            ax.set_ylim([0, max(1, max(A_meas) * 1.1)])
+            ax.set_xticks([0, 1000, 2000])
+            ax.legend(fontsize=16)
+            st.pyplot(fig)
+
+            # ------------- A–Ci RESPONSE -------------
+            Ci_range = np.linspace(0, 2000, 100)
+            Q_fixed = np.full_like(Ci_range, 0.85*2000)
+            T_fixed = np.full_like(Ci_range, 25 + 273.15)
+
+            x_Ci = np.column_stack((Ci_range, Q_fixed, T_fixed))
+            A_Ci = evaluateFvCB(x_Ci, p)
+
+            fig_ci, ax_ci = plt.subplots(figsize=(10, 10))
+            ax_ci.plot(Ci_range, A_Ci, "r", linewidth=4, label="FvCB Fit at Q=2000, T=25")
+
+            filtered_df = df[
+                (df["Qabs"] >= 0.85*1900) & (df["Qabs"] <= 0.85*2100) &
+                (df["Tleaf"] >= 24.5) & (df["Tleaf"] <= 25.5)
+            ]
+            ax_ci.scatter(df["Ci"], df["A"], c="gainsboro", s=25, label="All Measured A")
+            ax_ci.scatter(filtered_df["Ci"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
+
+            ax_ci.set_xlabel(r"$C_i$ (µmol mol$^{-1}$)", fontsize=16)
+            ax_ci.set_ylabel(r"$A$ (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_ci.tick_params(axis='both', labelsize=14)
+            for spine in ax_ci.spines.values():
+                spine.set_linewidth(2)
+            ax_ci.set_ylim([0, max(1, max(A_meas) * 1.1)])
+            ax_ci.legend(fontsize=16)
+            st.pyplot(fig_ci)
+
+            # ------------- A–T RESPONSE -------------
+            T_range = np.linspace(20, 50, 100) + 273.15
+            Ci_fixed = np.full_like(T_range, 300)
+            Q_fixed = np.full_like(T_range, 0.85*2000)
+
+            x_T = np.column_stack((Ci_fixed, Q_fixed, T_range))
+            A_T = evaluateFvCB(x_T, p)
+
+            fig_T, ax_T = plt.subplots(figsize=(10, 10))
+            ax_T.plot(T_range - 273.15, A_T, "r", linewidth=4, label="FvCB Fit at Ci=300, Q=2000")
+
+            filtered_df = df[
+                (df["Qabs"] >= 0.85*1900) & (df["Qabs"] <= 0.85*2100) &
+                (df["Ci"] >= 290) & (df["Ci"] <= 310)
+            ]
+            ax_T.scatter(df["Tleaf"], df["A"], c="gainsboro", s=25, label="All Measured A")
+            ax_T.scatter(filtered_df["Tleaf"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
+
+            ax_T.set_xlabel(r"$T_{leaf}$ (°C)", fontsize=16)
+            ax_T.set_ylabel(r"$A$ (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_T.tick_params(axis='both', labelsize=14)
+            for spine in ax_T.spines.values():
+                spine.set_linewidth(2)
+            ax_T.set_ylim([0, max(1, max(A_meas) * 1.1)])
+            ax_T.legend(fontsize=16)
+            st.pyplot(fig_T)
+
+            x_all = np.column_stack((
+                df["Ci"].values,
+                df["Qabs"].values,
+                df["Tleaf"].values + 273.15  # convert °C to K
+            ))
+
+            A_model = evaluateFvCB(x_all, p)
+            A_measured = df["A"].values
+
+            fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
+            ax_1to1.scatter(A_measured, A_model, color='k', s=25, label="Data")
+
+            lims = [min(min(A_measured), min(A_model)), max(max(A_measured), max(A_model))]
+            ax_1to1.plot(lims, lims, 'r--', linewidth=2, label="1:1")
+
+            ax_1to1.set_xlabel("Measured A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_1to1.set_ylabel("Modeled A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_1to1.set_xlim(lims)
+            ax_1to1.set_ylim(lims)
+            ax_1to1.tick_params(axis='both', labelsize=14)
+            for spine in ax_1to1.spines.values():
+                spine.set_linewidth(2)
+            ax_1to1.legend(fontsize=14)
+            ax_1to1.set_aspect('equal', 'box')
+
+            r2 = r2_score(A_measured, A_model)
+            ax_1to1.text(0.05, 0.95, f"$R^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                        fontsize=14, verticalalignment='top')
+
+            st.pyplot(fig_1to1)
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
@@ -585,13 +708,6 @@ with tabs[1]:
                     # ax.legend()
                     # st.pyplot(fig)
 
-                    
-                    Q_meas = x
-                    D_meas = y
-                    gsw_meas = z
-
-                    
-
                     # Plot Light Resp
                     Q_meas = x
                     D_meas = y
@@ -659,13 +775,16 @@ with tabs[1]:
                     ax.scatter(gsw_meas, gsw_pred, c="k", label="Data",s=25)
                     min_val = min(gsw_meas.min(), gsw_pred.min())
                     max_val = max(gsw_meas.max(), gsw_pred.max())
-                    ax.plot([min_val, max_val], [min_val, max_val], "r", label="1:1 Line",linewidth=4)
+                    ax.plot([min_val, max_val], [min_val, max_val], "r--", label="1:1",linewidth=4)
 
                     ax.set_xlabel(r"Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
                     ax.set_ylabel(r"Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
                     ax.tick_params(axis='both', labelsize=14) 
                     for spine in ax.spines.values():
                         spine.set_linewidth(2)
+                    r2 = r2_score(gsw_meas, gsw_pred)
+                    ax.text(0.05, 0.95, f"$R^2$ = {r2:.2f}", transform=ax.transAxes,
+                                fontsize=14, verticalalignment='top')
                     ax.legend(fontsize=16)
                     ax.grid(True)
                     st.pyplot(fig)
