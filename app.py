@@ -102,8 +102,8 @@ with tabs[0]:
 
         # Try auto-detecting Q, T, Ci, A
         default_cols = {
-            "Q": "Qabs",
-            "T": "Tleaf",
+            "Qabs": "Qabs",
+            "Tleaf": "Tleaf",
             "Ci": "Ci",
             "A": "A"
         }
@@ -116,8 +116,8 @@ with tabs[0]:
         if all(found_cols.values()):
             st.subheader("Auto-Detected Columns For Fitting")
             #st.write({k: found_cols[k] for k in ["Q", "T", "Ci", "A"]})
-            selected_data = df[[found_cols["Q"], found_cols["T"], found_cols["Ci"], found_cols["A"]]].copy()
-            selected_data.columns = ["Q", "T", "Ci", "A"]
+            selected_data = df[[found_cols["Qabs"], found_cols["Tleaf"], found_cols["Ci"], found_cols["A"]]].copy()
+            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A"]
             st.dataframe(selected_data.head(),hide_index=True)
 
             # Store in session state for downstream use
@@ -136,20 +136,32 @@ with tabs[0]:
 
             col_options = list(df.columns)
 
-            q_col = st.selectbox("Qabs (Light)", col_options, index=col_options.index(found_cols["Q"]) if found_cols["Q"] else 0)
-            t_col = st.selectbox("Tleaf (Temperature)", col_options, index=col_options.index(found_cols["T"]) if found_cols["T"] else 1)
+            q_col = st.selectbox("Qabs (Light)", col_options, index=col_options.index(found_cols["Qabs"]) if found_cols["Qabs"] else 0)
+            t_col = st.selectbox("Tleaf (Temperature)", col_options, index=col_options.index(found_cols["Tleaf"]) if found_cols["Tleaf"] else 1)
             ci_col = st.selectbox("Ci (Internal CO₂)", col_options, index=col_options.index(found_cols["Ci"]) if found_cols["Ci"] else 2)
             a_col = st.selectbox("A (Assimilation)", col_options, index=col_options.index(found_cols["A"]) if found_cols["A"] else 3)
 
+            # Auto-update preview on every selection change
             selected_data = df[[q_col, t_col, ci_col, a_col]].copy()
             selected_data.columns = ["Qabs", "Tleaf", "Ci", "A"]
-            st.dataframe(selected_data.head(),hide_index=True)
+            st.dataframe(selected_data.head(), hide_index=True)
 
+            # Update the session state temporarily
             st.session_state["selected_data"] = selected_data
+
+
+        df = st.session_state.get("selected_data")
+        df["CurveID"] = 0
+        st.session_state["selected_data"] = df
+
+        required_cols = {"Qabs", "Tleaf", "Ci", "A"}
+        if not required_cols.issubset(df.columns):
+            st.error(f"Selected data is missing one or more required columns: {required_cols - set(df.columns)}")
+            st.stop()
         
         #st.write("Model fitting process will be implemented here.")
-        species_to_fit = st.text_input("Enter species name", "Iceberg")
-        species_variety = st.text_input("Enter species variety", "Calmar")
+        species_to_fit = st.text_input("Enter species name", "Species")
+        species_variety = st.text_input("Enter species variety", "Variety")
 
         # User Inputs for fitting settings
         LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
