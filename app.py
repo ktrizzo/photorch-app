@@ -86,18 +86,18 @@ with tabs[0]:
 
     if uploaded_files:
         dfs = []
-        for file in uploaded_files:
+        for numCurve, file in enumerate(uploaded_files):
             # Read and drop the first row (header)
             if file.name.endswith(".txt"):
                 df = pd.read_csv(file, skiprows=66)
             else:
                 df = pd.read_excel(file, skiprows=14)
             df = df.drop(index=0).reset_index(drop=True)
+            df["CurveID"] = numCurve
             dfs.append(df)
 
         # Concatenate all dataframes
         df = pd.concat(dfs, ignore_index=True)
-        df["CurveID"] = 0
         st.success(f"✅ Loaded {len(df)} rows from {len(uploaded_files)} files.")
         st.dataframe(df.head(),hide_index=True)
 
@@ -117,8 +117,8 @@ with tabs[0]:
         if all(found_cols.values()):
             st.subheader("Auto-Detected Columns For Fitting")
             #st.write({k: found_cols[k] for k in ["Q", "T", "Ci", "A"]})
-            selected_data = df[[found_cols["Qabs"], found_cols["Tleaf"], found_cols["Ci"], found_cols["A"]]].copy()
-            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A"]
+            selected_data = df[[found_cols["Qabs"], found_cols["Tleaf"], found_cols["Ci"], found_cols["A"],"CurveID"]].copy()
+            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A","CurveID"]
             st.dataframe(selected_data.head(),hide_index=True)
 
             # Store in session state for downstream use
@@ -143,8 +143,8 @@ with tabs[0]:
             a_col = st.selectbox("A (Assimilation)", col_options, index=col_options.index(found_cols["A"]) if found_cols["A"] else 3)
 
             # Auto-update preview on every selection change
-            selected_data = df[[q_col, t_col, ci_col, a_col]].copy()
-            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A"]
+            selected_data = df[[q_col, t_col, ci_col, a_col, "CurveID"]].copy()
+            selected_data.columns = ["Qabs", "Tleaf", "Ci", "A","CurveID"]
             st.dataframe(selected_data.head(), hide_index=True)
 
             # Update the session state temporarily
@@ -152,10 +152,9 @@ with tabs[0]:
 
 
         df = st.session_state.get("selected_data")
-        df["CurveID"] = 0
         st.session_state["selected_data"] = df
 
-        required_cols = {"Qabs", "Tleaf", "Ci", "A"}
+        required_cols = {"Qabs", "Tleaf", "Ci", "A","CurveID"}
         if not required_cols.issubset(df.columns):
             st.error(f"Selected data is missing one or more required columns: {required_cols - set(df.columns)}")
             st.stop()
@@ -176,7 +175,7 @@ with tabs[0]:
         learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
         iterations = st.slider("Iterations", min_value=1000, max_value=10000, value=1500)
 
-        for col in ["Qabs", "Tleaf", "Ci", "A"]:
+        for col in ["Qabs", "Tleaf", "Ci", "A","CurveID"]:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         df = df.dropna().reset_index(drop=True)
@@ -825,19 +824,23 @@ with tabs[1]:
                     
                 except Exception as e:
                     st.write("Error in fitting:", e)
-
 # ---- PRESSURE-VOLUME MODEL ----
 with tabs[2]:
 
     st.header('Pressure-Volume Curve Fitting')
 
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+    uploaded_file = st.file_uploader("Upload your files", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
-        data_pv = pd.read_csv(uploaded_file)
-        all_data_pv = data_pv
-        st.subheader("Uploaded Spreadsheet")
-        st.dataframe(data_pv)
+        if uploaded_file.name.endswith(".csv"):
+            df_pv = pd.read_csv(uploaded_file)
+        else:
+            df_pv = pd.read_excel(uploaded_file)
+
+        st.success(f"✅ Loaded {len(df_pv)} rows from {uploaded_file.name}")
+        st.dataframe(df_pv.head(), hide_index=True)
+
+        data_pv = df_pv
 
         # Species filtering
         species_col = next((col for col in data_pv.columns if col.lower() == "species"), None)
@@ -847,240 +850,148 @@ with tabs[2]:
             selected_species = st.selectbox("Select a species", species_list, key="pv_species_select")
             data_pv = data_pv[data_pv[species_col] == selected_species]
 
-
-        # Initialize session state for X and Y selection
+        # ---- AUTO-DETECT PV COLUMNS ----
         if 'x_colum_pv' not in st.session_state:
             st.session_state.x_colum_pv = None
         if 'y_colum_pv' not in st.session_state:
             st.session_state.y_colum_pv = None
 
-        def select_column(col):
-            if st.session_state.x_colum_pv is None:
-                st.session_state.x_colum_pv = col
-            elif st.session_state.y_colum_pv is None and col != st.session_state.x_colum_pv:
-                st.session_state.y_colum_pv = col
+        if st.session_state.x_colum_pv is None and st.session_state.y_colum_pv is None:
+            column_candidates = {
+                "RWC": [
+                    "rwc", "relative_water_content", "relative water content", "Relative Water Content", 
+                    "RWC (%)", "RelWC", "RelWC%", "Rel_WC", "Rel_Water", "RWC_percent", "RWC_%", "rwcontent"
+                ],
+                "Psi": [
+                    "psi", "Ψ", "Psi", "water_potential", "water potential", "LeafPsi", "Leaf_Psi", 
+                    "leaf_water_potential", "LWP", "WP", "psi_leaf", "Pleaf", "Pressure", "P_leaf","Psi (Bar)","psi(bar)","psi(MPa)","psi (MPa)"
+                ]
+            }
 
-        def clear_x():
-            st.session_state.x_colum_pv = None
+            def normalize(name):
+                return name.lower().replace(" ", "").replace("_", "")
 
-        def clear_y():
-            st.session_state.y_colum_pv = None
+            normalized_cols = {normalize(col): col for col in data_pv.columns}
 
-        st.write("### Select X and Y columns")
+            for key, candidates in column_candidates.items():
+                for c in candidates:
+                    norm_c = normalize(c)
+                    if norm_c in normalized_cols:
+                        if key == "RWC":
+                            st.session_state.x_colum_pv = normalized_cols[norm_c]
+                        elif key == "Psi":
+                            st.session_state.y_colum_pv = normalized_cols[norm_c]
+                        break
+
+        # ---- COLUMN SELECTION UI ----
+        st.write("### Select Columns for PV Curve Fitting")
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            st.write("**X (Relative Water Content, RWC):**")
-            if st.session_state.x_colum_pv:
-                if st.button(st.session_state.x_colum_pv, key="clear_x_pv", on_click=clear_x):
-                    pass
-            else:
-                st.write("(Click a column below to select X)")
-        
+            st.session_state.x_colum_pv = st.selectbox(
+                "X (Relative Water Content, RWC)", 
+                options=list(data_pv.columns), 
+                index=(list(data_pv.columns).index(st.session_state.x_colum_pv)
+                       if st.session_state.x_colum_pv in data_pv.columns else 0)
+            )
+
         with col2:
-            st.write("**Y (Water Potential, Psi):**")
-            if st.session_state.y_colum_pv:
-                if st.button(st.session_state.y_colum_pv, key="clear_y_pv", on_click=clear_y):
-                    pass
-            else:
-                st.write("(Click a column below to select Y)")
-        
-        # Show buttons for each column in a horizontal layout
-        st.write("### Available Columns")
-        button_container = st.container()
-        cols = button_container.columns(min(len(data_pv.columns), 5))
-        for i, col in enumerate(data_pv.columns):
-            with cols[i % len(cols)]:
-                if st.button(col, key=f"col_{i}_{col}_pv", on_click=select_column, args=(col,)):
-                    pass
-        
-        # Ensure columns are selected before proceeding
+            st.session_state.y_colum_pv = st.selectbox(
+                "Y (Water Potential, Ψ)", 
+                options=list(data_pv.columns), 
+                index=(list(data_pv.columns).index(st.session_state.y_colum_pv)
+                       if st.session_state.y_colum_pv in data_pv.columns else 0)
+            )
+
         if st.session_state.x_colum_pv and st.session_state.y_colum_pv:
             x = data_pv[st.session_state.x_colum_pv]
             y = data_pv[st.session_state.y_colum_pv]
 
-            # Unit check section
-            st.markdown("---")  # Horizontal divider
+            x = pd.to_numeric(x, errors='coerce')
+            y = pd.to_numeric(y, errors='coerce')
+
+            valid = x.notna() & y.notna()
+            x = x[valid]
+            y = y[valid]
+
+            if x.empty or y.empty:
+                st.error("Error: selected data columns are empty after filtering. Check column selection or formatting.")
+                st.stop()
+
+            st.markdown("---")
             st.write("### Select Water Potential Units")
-            unit = st.radio("What unit is the given water potential data in?", ["MPa", "bar", "kPa", "-MPa", "-bar","-kPa"], horizontal=True)
+            unit = st.radio("What unit is the given water potential data in?", ["MPa", "bar", "kPa", "-MPa", "-bar", "-kPa"], horizontal=True)
 
             if unit == "bar":
-                y = 0.1 * y   # Convert to MPa
-            
-            if unit == "-bar":
-                y = -0.1 * y  # Convert to MPa
+                y = 0.1 * y
+            elif unit == "-bar":
+                y = -0.1 * y
+            elif unit == "kPa":
+                y = 0.001 * y
+            elif unit == "-kPa":
+                y = -0.001 * y
+            elif unit == "-MPa":
+                y = -1.0 * y
 
-            if unit == "kPa":
-                y = 0.001 * y   # Convert to MPa
-
-            if unit == "kPa":
-                y = -0.001 * y   # Convert to MPa
-
-            if unit == "-MPa":
-                y = -1.0 * y  # Convert to MPa
-
-            # Add an Advanced Options expander before the Fit Model button
             with st.expander("Advanced Options"):
                 st.write("Customize additional settings for model fitting.")
-
-                # Option to fix elasticity exponent
                 fix_elasticity = st.checkbox("Fix elastic exponent (ε)?")
                 
                 if fix_elasticity:
                     fixed_elasticity = st.number_input(r"Value", value=1.0, min_value=0.1, max_value=100.0)
-                    bounds = ([-5, 0, fixed_elasticity-0.0001], [0, 0.99, fixed_elasticity])  # Fix ε in bounds
+                    bounds = ([-5, 0, fixed_elasticity-0.0001], [0, 0.99, fixed_elasticity])
                 else:
-                    # Option to set custom upper bound for elasticity
                     custom_upper_bound = st.checkbox("Set custom upper bound for elastic exponent (ε)?")
-                    if custom_upper_bound:
-                        elasticity_upper_bound = st.number_input(r"Upper bound", value=2.0, min_value=0.5, max_value=100.0)
-                    else:
-                        elasticity_upper_bound = 2.0  # Default upper bound
+                    elasticity_upper_bound = st.number_input(r"Upper bound", value=2.0, min_value=0.5, max_value=100.0) if custom_upper_bound else 2.0
+                    bounds = ([-5, 0, 0], [0, 0.99, elasticity_upper_bound])
 
-                    bounds = ([-5, 0, 0], [0, 0.99, elasticity_upper_bound])  # Apply upper bound
+            if st.button("Fit Model", key="fit_pv"):
+                st.latex(r"\psi(R) = -\pi_o \cdot \left(\frac{R - R_{tlp}}{1 - R_{tlp}}\right)^{\epsilon} + \frac{\pi_o}{R}")
+                st.subheader("Best Fit Parameters")
                 
-                if species_col:
-                    fit_all_species = st.checkbox("Fit each species in file?",key="fit_all_pv")
+                p0 = [-1, 0.8, fixed_elasticity-0.0001] if fix_elasticity else [-1, 0.8, 1]
 
-            if st.button("Fit Model",key="fit_pv"):
+                try:
+                    popt, _ = curve_fit(PV, x, y, p0=p0, bounds=bounds)
+                    pio, Rtlp, elasticity = popt
+                    y_pred = PV(x, *popt)
+                    r2 = r_squared(y, y_pred)
+                    rmse_val = rmse(y, y_pred)
 
-                if(fit_all_species):
-                    st.latex(r"\psi(R) = -\pi_o \cdot \left(\frac{R - R_{tlp}}{1 - R_{tlp}}\right)^{\epsilon} + \frac{\pi_o}{R}")
+                    col1, col2, col3 = st.columns(3)
+                    with col1: st.latex(r"\pi_o = " + f"{pio:.2f}")
+                    with col2: st.latex(r"R_{tlp} = " + f"{Rtlp:.2f}")
+                    with col3: st.latex(r"\epsilon = " + f"{elasticity:.2f}")
 
-                    if fix_elasticity:
-                        p0 = [-1, 0.8, fixed_elasticity-0.0001]
-                    else:
-                        p0 = [-1, 0.8, 1]
-                    species_fits = []
-                    fig, ax = plt.subplots()
+                    st.latex(r"R^{2} = " + f"{r2:.3f}")
+                    st.latex(r"RMSE = " + f"{rmse_val:.3f}")
 
-                    for species in species_list:
-                        data_pv = all_data_pv
-                        species_data_pv = data_pv[data_pv[species_col] == species]
-                        x = species_data_pv[st.session_state.x_colum_pv]
-                        y = species_data_pv[st.session_state.y_colum_pv]
-
-                        if unit == "bar":
-                            y = 0.1 * y   # Convert to MPa
-                        
-                        if unit == "-bar":
-                            y = -0.1 * y  # Convert to MPa
-
-                        if unit == "kPa":
-                            y = 0.001 * y   # Convert to MPa
-
-                        if unit == "-kPa":
-                            y = -0.001 * y   # Convert to MPa
-
-                        if unit == "-MPa":
-                            y = -1.0 * y  # Convert to MPa
-
-                        try:
-                            popt, _ = curve_fit(PV, x, y, p0=p0, bounds=bounds)
-                            pio, Rtlp, elasticity = popt
-
-                            # Compute R2 and RMSE
-                            y_pred = PV(x, *popt)
-                            r2 = r_squared(y, y_pred)
-                            rmse_val = rmse(y, y_pred)
-
-                            # Store results
-                            species_fits.append({
-                                'species': species,
-                                'pi_o': round(pio, 4),
-                                'R_tlp': round(Rtlp, 4),
-                                'elastic_exponent': round(elasticity, 4),
-                                'Rsquared': round(r2, 3),
-                                'RMSE': round(rmse_val, 3)
-                            })
-
-                            # Plot data and fit
-                            scatter = ax.plot(x, y, 'o')
-                            xx = np.linspace(0.5, 1, 100)
-                            ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
-
-                        except Exception as e:
-                            st.write(f"Error fitting {species}: {e}")
-
-                    # Display Table
-                    results_df = pd.DataFrame(species_fits)
-                    st.subheader("Best Fit Parameters for All Species")
-                    st.dataframe(results_df)
-
-                    # Download Button
+                    results_df = pd.DataFrame({
+                        'species': [selected_species] if species_col else [],
+                        'pi_o': [round(pio, 4)],
+                        'R_tlp': [round(Rtlp, 4)],
+                        'elastic_exponent': [round(elasticity, 4)],
+                        'Rsquared': [round(r2, 4)],
+                        'RMSE': [round(rmse_val, 4)]
+                    })
                     csv = results_df.to_csv(index=False)
-                    st.download_button("Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
+                    st.dataframe(results_df, hide_index=True)
+                    st.download_button(label="Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
 
-                    # Finalize Plot
+                    fig, ax = plt.subplots()
+                    ax.plot(x, y, 'ko', label="Measured")
+                    xx = np.linspace(0.5, 1, 100)
+                    ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
                     ax.set_xlabel("Relative Water Content (/)")
                     ax.set_ylabel("Leaf Water Potential (MPa)")
+                    if species_col:
+                        ax.set_title(selected_species)
                     ax.legend()
                     st.pyplot(fig)
-                else:
-                    st.latex(r"\psi(R) = -\pi_o \cdot \left(\frac{R - R_{tlp}}{1 - R_{tlp}}\right)^{\epsilon} + \frac{\pi_o}{R}")
-                    st.subheader("Best Fit Parameters")
-                    
-                    if fix_elasticity:
-                        p0 = [-1, 0.8, fixed_elasticity-0.0001]
-                    else:
-                        p0 = [-1, 0.8, 1]
 
-                    try:
-                        popt, _ = curve_fit(PV, x, y, p0=p0, bounds=bounds)
-                        pio, Rtlp, elasticity = popt  
-                        
-                        # Compute R2 and RMSE
-                        y_pred = PV(x, *popt)
-                        r2 = r_squared(y, y_pred)
-                        rmse_val = rmse(y, y_pred)
+                except Exception as e:
+                    st.error(f"Error in fitting: {e}")
 
-                        # Display fitted parameters and metrics
-                        col1, col2, col3 = st.columns(3)
-                        with col1: st.latex(r"\pi_o = " + f"{pio:.2f}")  
-                        with col2: st.latex(r"R_{tlp} = " + f"{Rtlp:.2f}")
-                        with col3: st.latex(r"\epsilon = " + f"{elasticity:.2f}")
-                        
-                        st.latex(r"R^{2} = " + f"{r2:.3f}")
-                        st.latex(r"RMSE = " + f"{rmse_val:.3f}")
-
-                        # Prepare downloadable results
-                        if(species_col):
-                            results_df = pd.DataFrame({
-                                'species': [selected_species],
-                                'pi_o': [round(pio,4)],
-                                'R_tlp': [round(Rtlp,4)],
-                                'elastic_exponent': [round(elasticity,4)],
-                                'Rsquared': [round(r2,4)],
-                                'RMSE': [round(rmse_val,4)]
-                            })
-                        else:
-                            results_df = pd.DataFrame({
-                                'pi_o': [round(pio,4)],
-                                'R_tlp': [round(Rtlp,4)],
-                                'elastic_exponent': [round(elasticity,4)],
-                                'Rsquared': [round(r2,4)],
-                                'RMSE': [round(rmse_val,4)]
-                            })
-                        csv = results_df.to_csv(index=False)
-                        st.dataframe(results_df)
-                        st.download_button(label="Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
-                        
-
-                        # Plot results
-                        fig, ax = plt.subplots()
-                        ax.plot(x, y, 'ko', label="Measured")
-                        xx = np.linspace(0.5, 1, 100)
-                        ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
-                        ax.set_xlabel("Relative Water Content (/)")
-                        ax.set_ylabel("Leaf Water Potential (MPa)")
-                        if species_col:
-                            ax.set_title(selected_species)
-                        ax.legend()
-                        st.pyplot(fig)
-                        
-                        
-                    except Exception as e:
-                        st.write("Error in fitting:", e)
 
 
 # ---- PROSPECT MODEL ----
