@@ -3,6 +3,5 @@ matplotlib
 streamlit
 pandas
 scipy
-scikit-learn
 torch
 openpyxl

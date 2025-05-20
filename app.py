@@ -25,7 +25,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-from sklearn.metrics import r2_score
 from backend.fvcb import fitaci
 from backend.fvcb import initphotodata
 from backend.util import *
@@ -447,7 +446,7 @@ with tabs[0]:
             ax_1to1.legend(fontsize=14)
             ax_1to1.set_aspect('equal', 'box')
 
-            r2 = r2_score(A_measured, A_model)
+            r2 = computeR2(A_measured, A_model)
             ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
                         fontsize=14, verticalalignment='top',fontfamily="serif")
 
