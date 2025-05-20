@@ -405,8 +405,15 @@ with tabs[0]:
                 df["Tleaf"].values + 273.15  # convert °C to K
             ))
 
+            # ------------- 1:1 -------------
             A_model = evaluateFvCB(x_all, p)
             A_measured = df["A"].values
+
+            A_measured = np.array(A_measured)
+            A_model = np.array(A_model)
+            valid = ~np.isnan(A_measured) & ~np.isnan(A_model)
+            A_model = A_model[valid]
+            A_measured = A_measured[valid]
 
             fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
             ax_1to1.scatter(A_measured, A_model, color='k', s=25, label="Data")
@@ -429,6 +436,62 @@ with tabs[0]:
                         fontsize=14, verticalalignment='top')
 
             st.pyplot(fig_1to1)
+
+            # Create a grid for Ci and T
+            Ci = np.linspace(100, 2000, 60)        
+            T = np.linspace(273, 40 + 273, 60)        
+            Ci, T = np.meshgrid(Ci, T)          
+            Q = 2000 * np.ones_like(T)                
+
+            # First subplot: A vs Ci and T at Q = 2000
+            fig = plt.figure(figsize=(10, 10))
+            ax1 = fig.add_subplot(1, 1, 1, projection='3d')
+            
+            x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
+            A = evaluateFvCB(x, p)  # Run the FvCB model
+            A = A.reshape(Ci.shape)  # Reshape to match the grid
+
+            # Plot modeled surface
+            ax1.plot_surface(Ci, T - 273.15, A, cmap='YlGn', edgecolor='none', alpha=0.5, label="FvCB Fit")
+            ax1.set_xlabel(r"$C_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
+            ax1.set_ylabel(r"$T$ ($^{\circ}$C)", fontsize=13)
+            ax1.set_zlabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax1.view_init(elev=5, azim=-10)
+
+            # Plot measured data
+            ax1.scatter(df["Ci"], df["Tleaf"], df["A"], c='r', s=30, label="A-Ci Curves")
+            ax1.set_xticks([0,1000,2000])
+            st.pyplot(fig)
+
+
+            # Second subplot: A vs Ci and Q at T = 298.15 K
+            fig = plt.figure(figsize=(10, 10))
+            ax2 = fig.add_subplot(1, 1, 1, projection='3d')
+            Ci = np.linspace(5, 2000, 60)
+            Q = np.linspace(0, 2000, 60)
+            Ci, Q = np.meshgrid(Ci, Q)
+            T = 298.15 * np.ones_like(Ci)  # Constant temperature at 298.15 K
+
+            x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
+            A = evaluateFvCB(x, p)
+            A = A.reshape(Ci.shape)
+
+            # Plot modeled surface
+            ax2.plot_surface(Ci, Q, A, cmap='YlGn', edgecolor='none', alpha=0.8,label="FvCB Fit")
+            ax2.set_xlabel(r"$C_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
+            ax2.set_ylabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax2.set_zlabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax2.view_init(elev=5, azim=-10)
+
+
+            # Plot measured data on modeled surface
+            ax2.scatter(df["Ci"], df["Qabs"], df["A"], c='r', s=30,label="A-Ci Curves")
+            ax2.set_xticks([0,1000,2000])
+            ax2.legend(loc="upper right")
+
+            plt.tight_layout()
+            st.pyplot(fig)
+
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:

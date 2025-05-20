@@ -163,12 +163,12 @@ class initLicordata():
 
             self.A = torch.cat((self.A, torch.tensor(A)))
             try:
-                self.Q = torch.cat((self.Q, torch.tensor(LCdata['Qin'].iloc[indices].to_numpy())))
+                self.Q = torch.cat((self.Q, torch.tensor(LCdata['Qabs'].iloc[indices].to_numpy())))
             except:
                 # fill Q with default value 2000
                 self.Q = torch.cat((self.Q, torch.tensor([2000]*len(indices))))
                 if printout:
-                    print('Warning: Invalid Qin found, filling with default value 2000')
+                    print('Warning: Invalid Qabs found, filling with default value 2000')
             self.Ci = torch.cat((self.Ci, torch.tensor(Ci)))
             try:
                 self.Tleaf = torch.cat((self.Tleaf,torch.tensor(LCdata['Tleaf'].iloc[indices].to_numpy() + 273.15)))

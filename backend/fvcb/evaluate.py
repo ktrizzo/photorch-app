@@ -30,8 +30,9 @@ def evaluateFvCB(x, p):
     # Define Tresp function
     def Tresp(T, dHa, dHd, Topt):
         arrhenius = np.exp(dHa / R * (1 / 298 - 1 / T))
-        f298 = 1 + np.exp(dHd / R * (1 / Topt - 1 / 298) - np.log(dHd / dHa - 1))
-        fT = 1 + np.exp(dHd / R * (1 / Topt - 1 / T) - np.log(dHd / dHa - 1))
+        dHd_over_dHa = max(dHd / dHa,1.0001)
+        f298 = 1 + np.exp(dHd / R * (1 / Topt - 1 / 298) - np.log(dHd_over_dHa - 1))
+        fT = 1 + np.exp(dHd / R * (1 / Topt - 1 / T) - np.log(dHd_over_dHa - 1))
         return arrhenius * f298 / fT
 
     # Define temperature-dependent functions
