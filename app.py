@@ -1,5 +1,7 @@
 import sys
 import os
+import zipfile
+import io
 
 # Define the backend path explicitly
 backend_path = '/Users/ktrizzo/Documents/code/Git Projects/photorch-app/backend'
@@ -339,7 +341,7 @@ with tabs[0]:
             x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
             A = evaluateFvCB(x, p)
 
-            fig, ax = plt.subplots(figsize=(10, 10))
+            fig_Q, ax = plt.subplots(figsize=(10, 10))
             ax.plot(Q, A, "r", linewidth=4, label="FvCB Fit at Ci=300, T=25")
 
             filtered_df = df[
@@ -349,15 +351,15 @@ with tabs[0]:
             ax.scatter(df["Qabs"], df["A"], c="gainsboro", s=25, label="All Measured A")
             ax.scatter(filtered_df["Qabs"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
 
-            ax.set_xlabel(r"$Q_{abs}$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
-            ax.set_ylabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax.set_xlabel(r"Q (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
             ax.tick_params(axis='both', labelsize=14)
             for spine in ax.spines.values():
                 spine.set_linewidth(2)
             ax.set_ylim([0, max(1, max(A_meas) * 1.1)])
             ax.set_xticks([0, 1000, 2000])
             ax.legend(fontsize=16)
-            st.pyplot(fig)
+            st.pyplot(fig_Q)
 
             # ------------- A–Ci RESPONSE -------------
             Ci_range = np.linspace(0, 2000, 100)
@@ -377,8 +379,8 @@ with tabs[0]:
             ax_ci.scatter(df["Ci"], df["A"], c="gainsboro", s=25, label="All Measured A")
             ax_ci.scatter(filtered_df["Ci"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
 
-            ax_ci.set_xlabel(r"$C_i$ (µmol mol$^{-1}$)", fontsize=16)
-            ax_ci.set_ylabel(r"$A$ (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_ci.set_xlabel(r"C$_i$ (µmol mol$^{-1}$)", fontsize=16)
+            ax_ci.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
             ax_ci.tick_params(axis='both', labelsize=14)
             for spine in ax_ci.spines.values():
                 spine.set_linewidth(2)
@@ -404,8 +406,8 @@ with tabs[0]:
             ax_T.scatter(df["Tleaf"], df["A"], c="gainsboro", s=25, label="All Measured A")
             ax_T.scatter(filtered_df["Tleaf"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
 
-            ax_T.set_xlabel(r"$T_{leaf}$ (°C)", fontsize=16)
-            ax_T.set_ylabel(r"$A$ (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax_T.set_xlabel(r"T (°C)", fontsize=16)
+            ax_T.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
             ax_T.tick_params(axis='both', labelsize=14)
             for spine in ax_T.spines.values():
                 spine.set_linewidth(2)
@@ -430,10 +432,10 @@ with tabs[0]:
             A_measured = A_measured[valid]
 
             fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
-            ax_1to1.scatter(A_measured, A_model, color='k', s=25, label="Data")
+            ax_1to1.scatter(A_measured, A_model, color='k', s=10, label="")
 
             lims = [min(min(A_measured), min(A_model)), max(max(A_measured), max(A_model))]
-            ax_1to1.plot(lims, lims, 'r--', linewidth=2, label="1:1")
+            ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
 
             ax_1to1.set_xlabel("Measured A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
             ax_1to1.set_ylabel("Modeled A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
@@ -446,41 +448,44 @@ with tabs[0]:
             ax_1to1.set_aspect('equal', 'box')
 
             r2 = r2_score(A_measured, A_model)
-            ax_1to1.text(0.05, 0.95, f"$R^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
-                        fontsize=14, verticalalignment='top')
+            ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                        fontsize=14, verticalalignment='top',fontfamily="serif")
 
             st.pyplot(fig_1to1)
 
             # Create a grid for Ci and T
             Ci = np.linspace(100, 2000, 60)        
-            T = np.linspace(273, 40 + 273, 60)        
+            T = np.linspace(273, 50 + 273, 60)        
             Ci, T = np.meshgrid(Ci, T)          
             Q = 2000 * np.ones_like(T)                
 
             # First subplot: A vs Ci and T at Q = 2000
-            fig = plt.figure(figsize=(10, 10))
-            ax1 = fig.add_subplot(1, 1, 1, projection='3d')
+            fig3D = plt.figure(figsize=(10, 10))
+            ax1 = fig3D.add_subplot(1, 1, 1, projection='3d')
             
             x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
             A = evaluateFvCB(x, p)  # Run the FvCB model
             A = A.reshape(Ci.shape)  # Reshape to match the grid
 
             # Plot modeled surface
-            ax1.plot_surface(Ci, T - 273.15, A, cmap='YlGn', edgecolor='none', alpha=0.5, label="FvCB Fit")
-            ax1.set_xlabel(r"$C_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
-            ax1.set_ylabel(r"$T$ ($^{\circ}$C)", fontsize=13)
-            ax1.set_zlabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax1.plot_surface(Ci, T - 273.15, A, edgecolor='none', alpha=0.5, label="FvCB Fit")
+            ax1.set_xlabel(r"C$_i$ (µmol mol$^{-1}$)", fontsize=13)
+            ax1.set_ylabel(r"T ($^{\circ}$C)", fontsize=13)
+            ax1.set_zlabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=13)
             ax1.view_init(elev=5, azim=-10)
+            ax1.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            ax1.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            ax1.zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
 
             # Plot measured data
             ax1.scatter(df["Ci"][df["Qabs"]>0.85*1900], df["Tleaf"][df["Qabs"]>0.85*1900], df["A"][df["Qabs"]>0.85*1900], c='r', s=30, label="A-Ci Curves")
             ax1.set_xticks([0,1000,2000])
-            st.pyplot(fig)
+            st.pyplot(fig3D)
 
 
             # Second subplot: A vs Ci and Q at T = 298.15 K
-            fig = plt.figure(figsize=(10, 10))
-            ax2 = fig.add_subplot(1, 1, 1, projection='3d')
+            fig3D2 = plt.figure(figsize=(4, 4))
+            ax2 = fig3D2.add_subplot(1, 1, 1, projection='3d')
             Ci = np.linspace(5, 2000, 60)
             Q = np.linspace(0, 2000, 60)
             Ci, Q = np.meshgrid(Ci, Q)
@@ -491,11 +496,15 @@ with tabs[0]:
             A = A.reshape(Ci.shape)
 
             # Plot modeled surface
-            ax2.plot_surface(Ci, Q, A, cmap='YlGn', edgecolor='none', alpha=0.8,label="FvCB Fit")
-            ax2.set_xlabel(r"$C_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
-            ax2.set_ylabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
-            ax2.set_zlabel(r"$A$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            #ax2.plot_surface(Ci, Q, A, cmap='YlGn', edgecolor='none', alpha=0.8,label="FvCB Fit")
+            ax2.plot_surface(Ci, Q, A, edgecolor='none', alpha=0.5,label="FvCB Fit")
+            ax2.set_xlabel(r"C$_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
+            ax2.set_ylabel(r"Q ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax2.set_zlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
             ax2.view_init(elev=5, azim=-10)
+            ax2.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            ax2.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            ax2.zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
 
 
             # Plot measured data on modeled surface
@@ -504,7 +513,43 @@ with tabs[0]:
             ax2.legend(loc="upper right")
 
             plt.tight_layout()
-            st.pyplot(fig)
+            st.pyplot(fig3D2)
+
+            # Create in-memory zip archive
+            zip_buffer = io.BytesIO()
+
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                # Add each figure in both .png and .eps formats
+                for name, figure in [
+                    ("light_response", fig_Q),
+                    ("aci_response", fig_ci),
+                    ("temp_response", fig_T),
+                    ("one_to_one", fig_1to1),
+                    ("aci_temp_surface", fig3D),
+                    ("aci_light_surface", fig3D2)
+                ]:
+                    # Save as PNG
+                    png_buf = io.BytesIO()
+                    figure.savefig(png_buf, format='png', bbox_inches='tight')
+                    png_buf.seek(0)
+                    zip_file.writestr(f"{name}.png", png_buf.read())
+
+                    # Save as EPS
+                    eps_buf = io.BytesIO()
+                    figure.savefig(eps_buf, format='eps', bbox_inches='tight')
+                    eps_buf.seek(0)
+                    zip_file.writestr(f"{name}.eps", eps_buf.read())
+
+            # Finalize zip
+            zip_buffer.seek(0)
+
+            # Download button
+            st.download_button(
+                label="📥 Download Figures (.eps + .png)",
+                data=zip_buffer,
+                file_name="FvCB_Figures.zip",
+                mime="application/zip"
+            )
 
 
 # ---- STOMATAL CONDUCTANCE ----
