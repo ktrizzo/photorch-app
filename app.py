@@ -473,7 +473,7 @@ with tabs[0]:
             ax1.view_init(elev=5, azim=-10)
 
             # Plot measured data
-            ax1.scatter(df["Ci"], df["Tleaf"], df["A"], c='r', s=30, label="A-Ci Curves")
+            ax1.scatter(df["Ci"][df["Qabs"]>0.85*1900], df["Tleaf"][df["Qabs"]>0.85*1900], df["A"][df["Qabs"]>0.85*1900], c='r', s=30, label="A-Ci Curves")
             ax1.set_xticks([0,1000,2000])
             st.pyplot(fig)
 
@@ -499,7 +499,7 @@ with tabs[0]:
 
 
             # Plot measured data on modeled surface
-            ax2.scatter(df["Ci"], df["Qabs"], df["A"], c='r', s=30,label="A-Ci Curves")
+            ax2.scatter(df["Ci"][df["Tleaf"]<27], df["Qabs"][df["Tleaf"]<27], df["A"][df["Tleaf"]<27], c='r', s=30,label="A-Ci Curves")
             ax2.set_xticks([0,1000,2000])
             ax2.legend(loc="upper right")
 
