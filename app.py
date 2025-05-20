@@ -89,7 +89,7 @@ with tabs[0]:
         for numCurve, file in enumerate(uploaded_files):
             # Read and drop the first row (header)
             if file.name.endswith(".txt"):
-                df = pd.read_csv(file, skiprows=66)
+                df = pd.read_csv(file, skiprows=66,sep='\t')
             else:
                 df = pd.read_excel(file, skiprows=14)
             df = df.drop(index=0).reset_index(drop=True)
@@ -124,6 +124,10 @@ with tabs[0]:
             # Store in session state for downstream use
             st.session_state["selected_data"] = selected_data
 
+            # Initialize reselect flag if not already present
+            if "reselect_columns" not in st.session_state:
+                st.session_state["reselect_columns"] = False
+
             if st.button("Reselect Columns"):
                 st.session_state["reselect_columns"] = True
 
@@ -132,7 +136,7 @@ with tabs[0]:
             st.session_state["reselect_columns"] = True
 
         # ---- MANUAL COLUMN SELECTION ----
-        if st.session_state.get("reselect_columns", False):
+        if st.session_state.get("reselect_columns", True):
             st.write("### Select Model Columns")
 
             col_options = list(df.columns)
@@ -149,6 +153,7 @@ with tabs[0]:
 
             # Update the session state temporarily
             st.session_state["selected_data"] = selected_data
+            
 
 
         df = st.session_state.get("selected_data")
