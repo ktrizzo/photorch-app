@@ -78,7 +78,7 @@ tabs = st.tabs(["Photosynthesis", "Stomatal Conductance", "Pressure-Volume","PRO
 with tabs[0]:
     st.header("Photosynthesis Model Fitting")
     # File uploader
-    uploaded_files = st.file_uploader("Upload multiple photosynthesis data files", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload photosynthesis data files", accept_multiple_files=True)
     uploaded_filenames = [file.name for file in uploaded_files] if uploaded_files else []
 
     for file in uploaded_files:
@@ -96,18 +96,31 @@ with tabs[0]:
         st.session_state["last_uploaded_files"] = uploaded_filenames
 
     if uploaded_files:
+        header_present = st.checkbox("Skip Header Lines", value=True)
         dfs = []
         for numCurve, file in enumerate(uploaded_files):
-            # Read and drop the first row (header)
-            if file.name.endswith(".txt"):
-                df = pd.read_csv(file, skiprows=66,sep='\t')
-            elif file.name.endswith(".xlsx") :
-                df = pd.read_excel(file, skiprows=14)
+            # Set skiprows based on checkbox and file type
+            if not header_present:
+                skiprows = 0
+            elif file.name.endswith(".xlsx"):
+                skiprows = 14
+            else:
+                skiprows = 66
+
+            # Load file with appropriate skiprows
+            if file.name.endswith(".xlsx"):
+                df = pd.read_excel(file, skiprows=skiprows)
+            elif file.name.endswith(".txt"):
+                df = pd.read_csv(file, skiprows=skiprows, sep="\t")
             elif file.name.endswith(".csv"):
-                df = pd.read_csv(file, skiprows=66)
-            else: 
-                df = pd.read_csv(file, skiprows=66,sep='\t')
-            df = df.drop(index=0).reset_index(drop=True)
+                df = pd.read_csv(file, skiprows=skiprows)
+            else:
+                df = pd.read_csv(file, skiprows=skiprows, sep="\t")
+
+            # Drop the first row if it exactly matches the column names
+            if header_present:
+                df = df.drop(index=0).reset_index(drop=True)
+
             df["CurveID"] = numCurve
             dfs.append(df)
 
