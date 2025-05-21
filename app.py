@@ -360,7 +360,7 @@ with tabs[0]:
             ax.legend(fontsize=16)
             st.pyplot(fig_Q)
 
-            # ------------- A–Ci RESPONSE -------------
+            # ------------- Ci RESPONSE -------------
             Ci_range = np.linspace(0, 2000, 100)
             Q_fixed = np.full_like(Ci_range, 0.85*2000)
             T_fixed = np.full_like(Ci_range, 25 + 273.15)
@@ -373,7 +373,7 @@ with tabs[0]:
 
             filtered_df = df[
                 (df["Qabs"] >= 0.85*1900) & (df["Qabs"] <= 0.85*2100) &
-                (df["Tleaf"] >= 24.5) & (df["Tleaf"] <= 25.5)
+                (df["Tleaf"] >= 23.5) & (df["Tleaf"] <= 26)
             ]
             ax_ci.scatter(df["Ci"], df["A"], c="gainsboro", s=25, label="All Measured A")
             ax_ci.scatter(filtered_df["Ci"], filtered_df["A"], c="k", s=25, label="Relevant Measured A")
@@ -387,7 +387,7 @@ with tabs[0]:
             ax_ci.legend(fontsize=16)
             st.pyplot(fig_ci)
 
-            # ------------- A–T RESPONSE -------------
+            # ------------- T RESPONSE -------------
             T_range = np.linspace(20, 50, 100) + 273.15
             Ci_fixed = np.full_like(T_range, 300)
             Q_fixed = np.full_like(T_range, 0.85*2000)
