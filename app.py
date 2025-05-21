@@ -114,7 +114,7 @@ with tabs[0]:
         # Concatenate all dataframes
         df = pd.concat(dfs, ignore_index=True)
         st.success(f"✅ Loaded {len(df)} rows from {len(uploaded_files)} files.")
-        st.dataframe(df.head(),hide_index=True)
+        st.dataframe(df.head())
 
         # Try auto-detecting Q, T, Ci, A
         default_cols = {
@@ -134,7 +134,7 @@ with tabs[0]:
             #st.write({k: found_cols[k] for k in ["Q", "T", "Ci", "A"]})
             selected_data = df[[found_cols["Qabs"], found_cols["Tleaf"], found_cols["Ci"], found_cols["A"],"CurveID"]].copy()
             selected_data.columns = ["Qabs", "Tleaf", "Ci", "A","CurveID"]
-            st.dataframe(selected_data.head(),hide_index=True)
+            st.dataframe(selected_data.head())
 
             # Store in session state for downstream use
             st.session_state["selected_data"] = selected_data
@@ -164,7 +164,7 @@ with tabs[0]:
             # Auto-update preview on every selection change
             selected_data = df[[q_col, t_col, ci_col, a_col, "CurveID"]].copy()
             selected_data.columns = ["Qabs", "Tleaf", "Ci", "A","CurveID"]
-            st.dataframe(selected_data.head(), hide_index=True)
+            st.dataframe(selected_data.head())
 
             # Update the session state temporarily
             st.session_state["selected_data"] = selected_data
@@ -314,7 +314,7 @@ with tabs[0]:
 
         if st.session_state.get("fit_done", False):
             st.success(f"✅ Parameters saved as: `{st.session_state['last_filename']}`")
-            st.dataframe(st.session_state["last_param_dict"],hide_index=True)
+            st.dataframe(st.session_state["last_param_dict"])
             st.download_button(
                 "Download Parameters CSV",
                 st.session_state["last_file_bytes"],
@@ -570,7 +570,7 @@ with tabs[1]:
             df = pd.read_excel(uploaded_file)
 
         st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
-        st.dataframe(df.head(), hide_index=True)
+        st.dataframe(df.head())
         species_col = "species" if "species" in df.columns else None
 
         # ---- MODEL SELECTION ----
@@ -621,7 +621,7 @@ with tabs[1]:
             st.subheader("Auto-Detected Columns For Fitting")
             selected_data = df[[found_cols[k] for k in required_keys]].copy()
             selected_data.columns = required_keys
-            st.dataframe(selected_data.head(), hide_index=True)
+            st.dataframe(selected_data.head())
 
             st.session_state["selected_data"] = selected_data
 
@@ -646,7 +646,7 @@ with tabs[1]:
 
             selected_data = df[[manual_selection[k] for k in required_keys]].copy()
             selected_data.columns = required_keys
-            st.dataframe(selected_data.head(), hide_index=True)
+            st.dataframe(selected_data.head())
 
             st.session_state["selected_data"] = selected_data
         
@@ -824,7 +824,7 @@ with tabs[1]:
                             'RMSE': [round(rmse_val,4)]
                         })
                     csv = results_df.to_csv(index=False)
-                    st.dataframe(results_df,hide_index=True)
+                    st.dataframe(results_df)
                     st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
                     
 
@@ -971,7 +971,7 @@ with tabs[2]:
             df_pv = pd.read_excel(uploaded_file)
 
         st.success(f"✅ Loaded {len(df_pv)} rows from {uploaded_file.name}")
-        st.dataframe(df_pv.head(), hide_index=True)
+        st.dataframe(df_pv.head())
 
         data_pv = df_pv
 
@@ -1108,7 +1108,7 @@ with tabs[2]:
                         'RMSE': [round(rmse_val, 4)]
                     })
                     csv = results_df.to_csv(index=False)
-                    st.dataframe(results_df, hide_index=True)
+                    st.dataframe(results_df)
                     st.download_button(label="Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
 
                     fig, ax = plt.subplots()
