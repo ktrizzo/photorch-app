@@ -468,10 +468,13 @@ with tabs[0]:
 
             # Plot modeled surface
             ax1.plot_surface(Ci, T - 273.15, A, edgecolor='none', alpha=0.5, label="FvCB Fit")
-            ax1.set_xlabel(r"C$_i$ (µmol mol$^{-1}$)", fontsize=13)
-            ax1.set_ylabel(r"T ($^{\circ}$C)", fontsize=13)
-            ax1.set_zlabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax1.set_xlabel(r"C$_i$ (µmol mol$^{-1}$)", fontsize=16, labelpad=15)
+            ax1.set_ylabel(r"T ($^{\circ}$C)", fontsize=16, labelpad=15)
+            ax1.set_zlabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
             ax1.view_init(elev=5, azim=-10)
+            ax1.tick_params(axis='both', labelsize=10)
+            for spine in ax1.spines.values():
+                spine.set_linewidth(4)
             ax1.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
             ax1.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
             ax1.zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
@@ -479,11 +482,12 @@ with tabs[0]:
             # Plot measured data
             ax1.scatter(df["Ci"][df["Qabs"]>0.85*1900], df["Tleaf"][df["Qabs"]>0.85*1900], df["A"][df["Qabs"]>0.85*1900], c='r', s=30, label="A-Ci Curves")
             ax1.set_xticks([0,1000,2000])
+            ax1.legend(loc="upper right",fontsize=16)
             st.pyplot(fig3D)
 
 
             # Second subplot: A vs Ci and Q at T = 298.15 K
-            fig3D2 = plt.figure(figsize=(4, 4))
+            fig3D2 = plt.figure(figsize=(10, 10))
             ax2 = fig3D2.add_subplot(1, 1, 1, projection='3d')
             Ci = np.linspace(5, 2000, 60)
             Q = np.linspace(0, 2000, 60)
@@ -496,10 +500,13 @@ with tabs[0]:
 
             # Plot modeled surface
             #ax2.plot_surface(Ci, Q, A, cmap='YlGn', edgecolor='none', alpha=0.8,label="FvCB Fit")
-            ax2.plot_surface(Ci, Q, A, edgecolor='none', alpha=0.5,label="FvCB Fit")
-            ax2.set_xlabel(r"C$_i$ ($\mu$mol mol$^{-1}$)", fontsize=13)
-            ax2.set_ylabel(r"Q ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
-            ax2.set_zlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=13)
+            ax2.plot_surface(Ci, Q, A, alpha=0.5,label="FvCB Fit",linewidth=8)
+            ax2.set_xlabel(r"C$_i$ ($\mu$mol mol$^{-1}$)", fontsize=18, labelpad=15)
+            ax2.set_ylabel(r"Q ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=18, labelpad=15)
+            ax2.set_zlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=18, labelpad=5)
+            ax2.tick_params(axis='both', labelsize=13)
+            for spine in ax2.spines.values():
+                spine.set_linewidth(4)
             ax2.view_init(elev=5, azim=-10)
             ax2.xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
             ax2.yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
@@ -509,7 +516,7 @@ with tabs[0]:
             # Plot measured data on modeled surface
             ax2.scatter(df["Ci"][df["Tleaf"]<27], df["Qabs"][df["Tleaf"]<27], df["A"][df["Tleaf"]<27], c='r', s=30,label="A-Ci Curves")
             ax2.set_xticks([0,1000,2000])
-            ax2.legend(loc="upper right")
+            ax2.legend(loc="upper right",fontsize=16)
 
             plt.tight_layout()
             st.pyplot(fig3D2)
