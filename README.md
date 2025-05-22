@@ -39,7 +39,7 @@ PhoTorch provides an intuitive, interactive platform for fitting widely used pla
 - Interactive and Visual
 - Real-time fitting feedback
 - Plotly-based visualization of fit quality
-- View RMSE, R², and residuals for model evaluation
+- View error metrics for model evaluation
 
 
 ## 🧪 Who is it for?
