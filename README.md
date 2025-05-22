@@ -3,9 +3,9 @@
 
 PhoTorch is an open-source tool for plant ecophysiologists and crop modelers, designed to streamline the fitting and analysis of core physiological models from gas exchange and water relations data.
 
-🌐 Web app: https://photorch.streamlit.app
+🌐 Web app: Try it instantly at https://photorch.streamlit.app.
 
-🐳 Docker-ready desktop app: Easily deployable on local machines with no Python setup required.
+🐳 Docker-based desktop app (Recommended): Install and run locally following [instructions](#local-setup).
 
 📄 Accompanying publications: [[PhoTorch](https://doi.org/10.48550/arXiv.2501.15484)]
 
@@ -39,7 +39,7 @@ PhoTorch provides an intuitive, interactive platform for fitting widely used pla
 - Interactive and Visual
 - Real-time fitting feedback
 - Plotly-based visualization of fit quality
-- View RMSE, R², and residuals for model evaluation
+- View error metrics for model evaluation
 
 
 ## 🧪 Who is it for?
@@ -62,7 +62,7 @@ PhoTorch is designed for:
 - Clone this repository and run via Docker for full offline functionality
 - See Installation Instructions below
 ---
-
+<a name="local-setup"></a>
 ## 🛠️ Local Setup Instructions (All Platforms)
 
 ### Step 0: Install Docker
@@ -78,6 +78,7 @@ PhoTorch is designed for:
 3. Launch Docker
 
 #### Linux (Ubuntu/Debian)
+Follow instructions [here](https://docs.docker.com/desktop/setup/install/linux/ubuntu/) or try
 ```bash
 sudo apt update
 sudo apt install -y docker.io
