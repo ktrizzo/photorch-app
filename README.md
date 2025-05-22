@@ -3,7 +3,7 @@
 
 PhoTorch is an open-source tool for plant ecophysiologists and crop modelers, designed to streamline the fitting and analysis of core physiological models from gas exchange and water relations data.
 
-🌐 Web app: Try it instantly at https://photorch.streamlit.app
+🌐 Web app: Try it instantly at https://photorch.streamlit.app.
 
 🐳 Docker-based desktop app (Recommended): Install and run locally following [instructions](#local-setup).
 
