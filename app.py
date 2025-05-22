@@ -143,7 +143,10 @@ with tabs[0]:
         st.dataframe(df.head(),hide_index=True)
 
         st.write(f"Survey Data")
-        st.dataframe(survey_df.head(),hide_index=True)
+        if survey_df.empty:
+            st.info(f"None")
+        else:
+            st.dataframe(survey_df.head(),hide_index=True)
 
         # Rescale if toggle is on
         if rescale_with_survey and not survey_df.empty and not df.empty:
@@ -574,7 +577,7 @@ with tabs[0]:
             plt.tight_layout()
             st.pyplot(fig3D2)
 
-            if(num_survey):
+            if(num_survey>0):
                 # ------------- Survey -------------
                 for col in ["obs", "Tleaf", "Ci", "A"]:
                     survey_df[col] = pd.to_numeric(survey_df[col], errors='coerce')
@@ -620,7 +623,7 @@ with tabs[0]:
                     figures.append(("aci_light_surface", fig3D2))
                 if 'figSurvey' in locals() and figSurvey is not None:
                     figures.append(("survey", figSurvey))
-                    
+
                 for name, figure in figures:
                     # Save as PNG
                     png_buf = io.BytesIO()
