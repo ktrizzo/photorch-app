@@ -996,25 +996,27 @@ with tabs[1]:
 
                     gsw_pred = BTA((Q_meas,D_meas), Em,i0,k,b)
 
-                    fig, ax = plt.subplots(figsize=(10, 10))
+                    fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
+                    ax_1to1.scatter(gsw_meas, gsw_pred, color='k', s=10, label="")
 
-                    err = np.abs(gsw_meas - gsw_pred) / gsw_meas
-                    ax.scatter(gsw_meas, gsw_pred, c="k", label="Data",s=25)
-                    min_val = min(gsw_meas.min(), gsw_pred.min())
-                    max_val = max(gsw_meas.max(), gsw_pred.max())
-                    ax.plot([min_val, max_val], [min_val, max_val], "r--", label="1:1",linewidth=4)
+                    lims = [min(min(gsw_meas), min(gsw_pred)), max(max(gsw_meas), max(gsw_pred))]
+                    ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
 
-                    ax.set_xlabel(r"Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
-                    ax.set_ylabel(r"Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
-                    ax.tick_params(axis='both', labelsize=14) 
-                    for spine in ax.spines.values():
+                    ax_1to1.set_xlabel("Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_ylabel("Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_xlim(lims)
+                    ax_1to1.set_ylim(lims)
+                    ax_1to1.tick_params(axis='both', labelsize=14)
+                    for spine in ax_1to1.spines.values():
                         spine.set_linewidth(2)
-                    r2 = r2_score(gsw_meas, gsw_pred)
-                    ax.text(0.05, 0.95, f"$R^2$ = {r2:.2f}", transform=ax.transAxes,
-                                fontsize=14, verticalalignment='top')
-                    ax.legend(fontsize=16)
-                    ax.grid(True)
-                    st.pyplot(fig)
+                    ax_1to1.legend(fontsize=14)
+                    ax_1to1.set_aspect('equal', 'box')
+
+                    r2 = computeR2(gsw_meas, gsw_pred)
+                    ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                                fontsize=14, verticalalignment='top',fontfamily="serif")
+
+                    st.pyplot(fig_1to1)
 
                     # Plot 3D Surface
 
