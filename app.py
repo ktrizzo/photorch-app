@@ -96,8 +96,10 @@ with tabs[0]:
         st.session_state["last_uploaded_files"] = uploaded_filenames
 
     if uploaded_files:
-        header_present = st.checkbox("Skip Header Lines", value=True)
+        header_present = st.toggle("Skip Header Lines", value=True)
+        rescale_with_survey = st.toggle("Rescale with Survey Data",value=False)
         dfs = []
+        survey_dfs = []
         for numCurve, file in enumerate(uploaded_files):
             # Set skiprows based on checkbox and file type
             if not header_present:
@@ -121,13 +123,51 @@ with tabs[0]:
             if header_present:
                 df = df.drop(index=0).reset_index(drop=True)
 
-            df["CurveID"] = numCurve
-            dfs.append(df)
+            # Route file to survey or main list
+            if "survey" in file.name.lower():
+                survey_dfs.append(df)
+            else:
+                df["CurveID"] = numCurve
+                dfs.append(df)
 
         # Concatenate all dataframes
-        df = pd.concat(dfs, ignore_index=True)
+        df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        survey_df = pd.concat(survey_dfs, ignore_index=True) if survey_dfs else pd.DataFrame()
+
         st.success(f"✅ Loaded {len(df)} rows from {len(uploaded_files)} files.")
+        num_survey = len(survey_dfs)
+        num_curves = len(dfs)
+
+        st.info(f"📊 Loaded {num_curves} response curve file(s) and {num_survey} survey file(s).")
+        st.write(f"Response Curve Data")
         st.dataframe(df.head(),hide_index=True)
+
+        st.write(f"Survey Data")
+        st.dataframe(survey_df.head(),hide_index=True)
+
+        # Rescale if toggle is on
+        if rescale_with_survey and not survey_df.empty and not df.empty:
+            try:
+                survey_A_mean = pd.to_numeric(survey_df["A"], errors="coerce").mean()
+
+                # Convert Q and Ci to numeric to filter
+                df["Qabs"] = pd.to_numeric(df["Qabs"], errors="coerce")
+                df["Ci"] = pd.to_numeric(df["Ci"], errors="coerce")
+                df["Tleaf"] = pd.to_numeric(df["Tleaf"], errors="coerce")
+                df["A"] = pd.to_numeric(df["A"], errors="coerce")
+
+                target_mask = (df["Qabs"].between(0.85*1900, 0.85*2100)) & (df["Tleaf"].between(24, 26))
+                max_A_at_target = df.loc[target_mask, "A"].nlargest(10).mean()
+                #st.write(max_A_at_target)
+
+                if pd.notna(max_A_at_target) and pd.notna(survey_A_mean) > 0:
+                    scale_factor = survey_A_mean / max_A_at_target
+                    df["A"] = df["A"] * scale_factor
+                    st.success(f"Rescaling performed. Survey mean: {survey_A_mean:.2f}, response curve target: {max_A_at_target:.2f}.")
+                elif not pd.notna(max_A_at_target):
+                    st.info(f"Rescaling ignored. Response curve target conditions don't exist.")
+            except Exception as e:
+                st.warning(f"Rescaling failed: {e}")
 
         # Try auto-detecting Q, T, Ci, A
         default_cols = {

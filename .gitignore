@@ -1,5 +1,14 @@
-backend/__pycache__/*
 .DS_Store
-__pycache__/*
+__pycache__/
 *.py[cod]
 *.pyc
+backend/fvcb/__pycache__/__init__.cpython-312.pyc
+backend/fvcb/__pycache__/evaluate.cpython-312.pyc
+backend/fvcb/__pycache__/fitaci.cpython-312.pyc
+backend/fvcb/__pycache__/fvcbmodels.cpython-312.pyc
+backend/fvcb/__pycache__/initphotodata.cpython-312.pyc
+backend/stomatal/__pycache__/__init__.cpython-312.pyc
+backend/stomatal/__pycache__/evaluate.cpython-312.pyc
+backend/stomatal/__pycache__/fitstomatal.cpython-312.pyc
+backend/stomatal/__pycache__/initscdata.cpython-312.pyc
+backend/stomatal/__pycache__/stomatalmodels.cpython-312.pyc
