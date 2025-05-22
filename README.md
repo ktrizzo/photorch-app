@@ -78,6 +78,7 @@ PhoTorch is designed for:
 3. Launch Docker
 
 #### Linux (Ubuntu/Debian)
+Follow instructions [here](https://docs.docker.com/desktop/setup/install/linux/ubuntu/) or try
 ```bash
 sudo apt update
 sudo apt install -y docker.io
