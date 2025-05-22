@@ -5,7 +5,7 @@ PhoTorch is an open-source tool for plant ecophysiologists and crop modelers, de
 
 🌐 Web app: Try it out at https://photorch.streamlit.app
 
-🐳 Docker-based desktop app (Recommended): Install and run locally following [instructions](https://github.com/ktrizzo/photorch-app?tab=readme-ov-file#-installation-options).
+🐳 Docker-based desktop app (Recommended): Install and run locally following [instructions](#local-setup-instructions-all-platforms).
 
 📄 Accompanying publications: [[PhoTorch](https://doi.org/10.48550/arXiv.2501.15484)]
 
