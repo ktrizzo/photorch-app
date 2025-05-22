@@ -97,7 +97,7 @@ with tabs[0]:
 
     if uploaded_files:
         header_present = st.toggle("Skip Header Lines", value=True)
-        rescale_with_survey = st.toggle("Rescale with Survey Data",value=False)
+        rescale_with_survey = st.toggle("Rescale with Survey Data",value=True)
         dfs = []
         survey_dfs = []
         for numCurve, file in enumerate(uploaded_files):
