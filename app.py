@@ -574,45 +574,54 @@ with tabs[0]:
             plt.tight_layout()
             st.pyplot(fig3D2)
 
-            # ------------- Survey -------------
-            for col in ["obs", "Tleaf", "Ci", "A"]:
-                survey_df[col] = pd.to_numeric(survey_df[col], errors='coerce')
+            if(num_survey):
+                # ------------- Survey -------------
+                for col in ["obs", "Tleaf", "Ci", "A"]:
+                    survey_df[col] = pd.to_numeric(survey_df[col], errors='coerce')
 
-            survey_df = survey_df.dropna(subset=["obs", "A"])
-            survey_df_sorted = survey_df.sort_values(by="A", ascending=True).reset_index(drop=True)
-            median_A = survey_df_sorted["A"].median()
-            std_A = survey_df_sorted["A"].std()
-            figSurvey, ax = plt.subplots(figsize=(10, 10))
+                survey_df = survey_df.dropna(subset=["obs", "A"])
+                survey_df_sorted = survey_df.sort_values(by="A", ascending=True).reset_index(drop=True)
+                median_A = survey_df_sorted["A"].median()
+                std_A = survey_df_sorted["A"].std()
+                figSurvey, ax = plt.subplots(figsize=(10, 10))
 
-            ax.bar(range(len(survey_df_sorted)), survey_df_sorted["A"], color="k")
-            ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Median A = {median_A:.2f}")
-            ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Std A = {std_A:.2f}")
+                ax.bar(range(len(survey_df_sorted)), survey_df_sorted["A"], color="k")
+                ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Median A = {median_A:.2f}")
+                ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Std A = {std_A:.2f}")
 
 
-            ax.set_xlabel("Observation", fontsize=16)
-            ax.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
-            ax.set_title("Survey Measurements")
-            ax.tick_params(axis='both', labelsize=14)
-            for spine in ax.spines.values():
-                spine.set_linewidth(2)
-            ax.legend(fontsize=16)
-            plt.tight_layout()
-            st.pyplot(figSurvey)
+                ax.set_xlabel("Observation", fontsize=16)
+                ax.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                ax.set_title("Survey Measurements")
+                ax.tick_params(axis='both', labelsize=14)
+                for spine in ax.spines.values():
+                    spine.set_linewidth(2)
+                ax.legend(fontsize=16)
+                plt.tight_layout()
+                st.pyplot(figSurvey)
 
             # Create in-memory zip archive
             zip_buffer = io.BytesIO()
 
             with zipfile.ZipFile(zip_buffer, "w") as zip_file:
                 # Add each figure in both .png and .eps formats
-                for name, figure in [
-                    ("light_response", fig_Q),
-                    ("aci_response", fig_ci),
-                    ("temp_response", fig_T),
-                    ("one_to_one", fig_1to1),
-                    ("aci_temp_surface", fig3D),
-                    ("aci_light_surface", fig3D2),
-                    ("survey",figSurvey)
-                ]:
+                figures = []
+                if 'fig_Q' in locals() and fig_Q is not None:
+                    figures.append(("light_response", fig_Q))
+                if 'fig_ci' in locals() and fig_ci is not None:
+                    figures.append(("aci_response", fig_ci))
+                if 'fig_T' in locals() and fig_T is not None:
+                    figures.append(("temp_response", fig_T))
+                if 'fig_1to1' in locals() and fig_1to1 is not None:
+                    figures.append(("one_to_one", fig_1to1))
+                if 'fig3D' in locals() and fig3D is not None:
+                    figures.append(("aci_temp_surface", fig3D))
+                if 'fig3D2' in locals() and fig3D2 is not None:
+                    figures.append(("aci_light_surface", fig3D2))
+                if 'figSurvey' in locals() and figSurvey is not None:
+                    figures.append(("survey", figSurvey))
+                    
+                for name, figure in figures:
                     # Save as PNG
                     png_buf = io.BytesIO()
                     figure.savefig(png_buf, format='png', bbox_inches='tight')
