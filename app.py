@@ -30,6 +30,10 @@ from backend.fvcb import initphotodata
 from backend.util import *
 plt.rcParams['font.family'] = 'serif'
 
+if not hasattr(st, "_has_printed_startup_message"):
+    print("🚀 App running at http://localhost:8501")
+    st._has_printed_startup_message = True
+
 
 # Smooth Max
 def smax(a, b, k):
