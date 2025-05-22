@@ -148,7 +148,7 @@ with tabs[0]:
         # Rescale if toggle is on
         if rescale_with_survey and not survey_df.empty and not df.empty:
             try:
-                survey_A_mean = pd.to_numeric(survey_df["A"], errors="coerce").mean()
+                survey_A_median = pd.to_numeric(survey_df["A"], errors="coerce").median()
 
                 # Convert Q and Ci to numeric to filter
                 df["Qabs"] = pd.to_numeric(df["Qabs"], errors="coerce")
@@ -157,13 +157,13 @@ with tabs[0]:
                 df["A"] = pd.to_numeric(df["A"], errors="coerce")
 
                 target_mask = (df["Qabs"].between(0.85*1900, 0.85*2100)) & (df["Tleaf"].between(24, 26))
-                max_A_at_target = df.loc[target_mask, "A"].nlargest(10).mean()
+                max_A_at_target = df.loc[target_mask, "A"].nlargest(10).median()
                 #st.write(max_A_at_target)
 
-                if pd.notna(max_A_at_target) and pd.notna(survey_A_mean) > 0:
-                    scale_factor = survey_A_mean / max_A_at_target
+                if pd.notna(max_A_at_target) and pd.notna(survey_A_median) > 0:
+                    scale_factor = survey_A_median / max_A_at_target
                     df["A"] = df["A"] * scale_factor
-                    st.success(f"Rescaling performed. Survey mean: {survey_A_mean:.2f}, response curve target: {max_A_at_target:.2f}.")
+                    st.success(f"Rescaling performed. Survey median: {survey_A_median:.2f}, response curve target: {max_A_at_target:.2f}.")
                 elif not pd.notna(max_A_at_target):
                     st.info(f"Rescaling ignored. Response curve target conditions don't exist.")
             except Exception as e:
@@ -574,6 +574,31 @@ with tabs[0]:
             plt.tight_layout()
             st.pyplot(fig3D2)
 
+            # ------------- Survey -------------
+            for col in ["obs", "Tleaf", "Ci", "A"]:
+                survey_df[col] = pd.to_numeric(survey_df[col], errors='coerce')
+
+            survey_df = survey_df.dropna(subset=["obs", "A"])
+            survey_df_sorted = survey_df.sort_values(by="A", ascending=True).reset_index(drop=True)
+            median_A = survey_df_sorted["A"].median()
+            std_A = survey_df_sorted["A"].std()
+            figSurvey, ax = plt.subplots(figsize=(10, 10))
+
+            ax.bar(range(len(survey_df_sorted)), survey_df_sorted["A"], color="k")
+            ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Median A = {median_A:.2f}")
+            ax.axhline(median_A, color="red", linestyle="--", linewidth=4, label=f"Std A = {std_A:.2f}")
+
+
+            ax.set_xlabel("Observation", fontsize=16)
+            ax.set_ylabel(r"A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
+            ax.set_title("Survey Measurements")
+            ax.tick_params(axis='both', labelsize=14)
+            for spine in ax.spines.values():
+                spine.set_linewidth(2)
+            ax.legend(fontsize=16)
+            plt.tight_layout()
+            st.pyplot(figSurvey)
+
             # Create in-memory zip archive
             zip_buffer = io.BytesIO()
 
@@ -585,7 +610,8 @@ with tabs[0]:
                     ("temp_response", fig_T),
                     ("one_to_one", fig_1to1),
                     ("aci_temp_surface", fig3D),
-                    ("aci_light_surface", fig3D2)
+                    ("aci_light_surface", fig3D2),
+                    ("survey",figSurvey)
                 ]:
                     # Save as PNG
                     png_buf = io.BytesIO()
