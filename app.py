@@ -53,10 +53,27 @@ def PV(x, pio, Rtlp, elasticity):
     psi = P + pi
     return psi
 
-# Buckley, Turnbull, Adams stomatal conductance model (2012)
+# Buckley, Turnbull, Adams (2012) stomatal conductance model 
 def BTA(x, Em, i0, k, b):
     q,d = x
     return Em * (q+i0) / (k + b*q + (q+i0) * d)
+
+# Ball, Woodrow, Berry (1987) stomatal conductance model
+def BWB(x, g0, g1):
+    a,h,cs = x
+    return g0 + g1 * a*h/cs
+
+# Medlyn et al. (2011) stomatal conductance model
+def MED(x, g0, g1):
+    a,d,ca = x
+    return g0 + 1.6*(1+ g1 / np.sqrt(d)) * a/ca
+
+# Leuning (1995) stomatal conductance model 
+def LEU(x, g0, g1, D0):
+    a,d,cs,gamma = x
+    return g0 + g1*a / ((cs-gamma)*(1+d/D0))
+
+
 
 
 # R-squared function
@@ -239,9 +256,8 @@ with tabs[0]:
             st.error(f"Selected data is missing one or more required columns: {required_cols - set(df.columns)}")
             st.stop()
         
-        #st.write("Model fitting process will be implemented here.")
         species_to_fit = st.text_input("Enter species name", "Species")
-        species_variety = st.text_input("Enter species variety", "Variety")
+        variety_to_fit = st.text_input("Enter species variety", "Variety")
 
         # User Inputs for fitting settings
         LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
@@ -313,7 +329,7 @@ with tabs[0]:
                 param_dict["Ko"] = fvcb.Ko25.item()
 
             df = pd.DataFrame(param_dict.items(), columns=["Parameter", "Value"])
-            filename = f"{species_to_fit}_{species_variety}_FvCB_Parameters.csv"
+            filename = f"{species_to_fit}_{variety_to_fit}_FvCB_Parameters.csv"
             savepath = os.path.join("results", "parameters", filename)
 
         
@@ -334,7 +350,7 @@ with tabs[0]:
 
             vals = [
                 species_to_fit,
-                species_variety,
+                variety_to_fit,
                 fvcb.Vcmax25.item(),
                 fvcb.Jmax25.item(),
                 fvcb.TPU25.item(),
@@ -506,7 +522,7 @@ with tabs[0]:
             ax_1to1.legend(fontsize=14)
             ax_1to1.set_aspect('equal', 'box')
 
-            r2 = computeR2(A_measured, A_model)
+            r2 = r_squared(A_measured, A_model)
             ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
                         fontsize=14, verticalalignment='top',fontfamily="serif")
 
@@ -656,6 +672,15 @@ with tabs[0]:
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
 
+    if "expand_advanced_options" not in st.session_state:
+            st.session_state["expand_advanced_options"] = False
+
+    if "filter_val" not in st.session_state:
+        st.session_state["filter_val"] = ""
+
+    if "filter_button_pressed" not in st.session_state:
+        st.session_state["filter_button_pressed"] = False
+
     st.header("Stomatal Conductance Model Fitting")
     uploaded_file = st.file_uploader("Upload stomatal conductance data file", type=["csv", "xlsx"])
     if uploaded_file:
@@ -666,17 +691,102 @@ with tabs[1]:
 
         st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
         st.dataframe(df.head(), hide_index=True)
-        species_col = "species" if "species" in df.columns else None
+
+        # Only update original_df and filtered_df if a new file is uploaded
+        if "uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state["uploaded_filename"]:
+            st.session_state["uploaded_filename"] = uploaded_file.name
+            st.session_state["original_df"] = df.copy()
+            st.session_state["filtered_df"] = df.copy()
+            st.session_state["filter_val"] = ""
+            st.session_state["filter_button_pressed"] = False
+
+        # Only create or update the filtered_df if it doesn’t already exist
+        if "filtered_df" not in st.session_state:
+            st.session_state["filtered_df"] = st.session_state["original_df"].copy()
+
+        # Always use session copy so filters persist through model selection
+        df = st.session_state["original_df"]
+        filtered_df = st.session_state["filtered_df"]
+
+        
+        
+        # --- ADVANCED OPTIONS ---
+        with st.expander("Advanced Options", expanded=st.session_state["expand_advanced_options"]):
+            st.write("Customize additional settings for model fitting.")
+
+            set_PAR_abs = st.checkbox("Set leaf PAR absorptivity (default = 0.85)", key="custom_par_check")
+            if set_PAR_abs:
+                new_abs_PAR = st.number_input("Leaf PAR absorptivity", min_value=0.1, max_value=1.0, value=0.85, step=0.01)
+                st.session_state["expand_advanced_options"] = True
+            # --- Column Filter Feature ---
+            st.markdown("Filter Rows by Column Value")
+            filter_col = st.selectbox("Select column to filter", df.columns)
+
+            if pd.api.types.is_numeric_dtype(df[filter_col]):
+                operator = st.selectbox("Operator", [">", "<", ">=", "<=", "==", "!="])
+                filter_val = st.number_input("Value", value=float(df[filter_col].mean()))
+                st.session_state["filter_val"] = filter_val
+                filter_expr = f"`{filter_col}` {operator} @filter_val"
+            else:
+                operator = st.selectbox("Operator", ["==", "!=", "contains", "not contains"])
+                filter_val = st.text_input("Value", value=st.session_state.get("filter_val", ""))
+                st.session_state["filter_val"] = filter_val
+                if operator == "contains":
+                    filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False)"
+                elif operator == "not contains":
+                    filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False) == False"
+                else:
+                    filter_expr = f"`{filter_col}` {operator} @filter_val"
+
+            # --- Apply Filter Button (above the dataframe)
+            col1, col2 = st.columns([1,1])
+
+            with col1:
+                apply_clicked = st.button("Apply Filter")
+            with col2:
+                clear_clicked = st.button("Clear Filters")
+
+            if apply_clicked:
+                try:
+                    st.session_state["filtered_df"] = st.session_state["original_df"].query(filter_expr).copy()
+                    st.session_state["filter_button_pressed"] = True
+                    st.session_state["expand_advanced_options"] = True
+                except Exception as e:
+                    st.error(f"Filter error: {e}")
+            
+
+
+            if clear_clicked:
+                st.session_state["filtered_df"] = st.session_state["original_df"].copy()
+                st.session_state["filter_val"] = ""
+                st.session_state["filter_button_pressed"] = False
+                st.session_state["expand_advanced_options"] = True
+            
+
+
+            # --- Show dataframe (in the middle)
+            if st.session_state.get("filter_button_pressed", False):
+                st.success(f"Filtered data: {len(st.session_state['filtered_df'])} rows remaining.")
+                st.dataframe(st.session_state["filtered_df"].head(), hide_index=True)
+            else:
+                st.info("Filter cleared.")
+                st.dataframe(st.session_state["original_df"].head(), hide_index=True)
+
+        species_col = next((col for col in filtered_df.columns if col.lower() == "species"), None)
+        variety_col = next((col for col in filtered_df.columns if col.lower() == "species"), None)
+
+        species = filtered_df[species_col].iloc[0] if species_col else ""
+        variety = filtered_df[variety_col].iloc[0] if variety_col else ""
 
         # ---- MODEL SELECTION ----
-        model_name = st.selectbox("Select Stomatal Conductance Model", ["Buckley, Turnbull, Adams (2012)", "Medlyn et al. (2011)",  "Leuning et al. (1995)", "Ball, Woodrow, Berry (1987)"])
+        model_name = st.selectbox("Select Stomatal Conductance Model", ["Buckley, Turnbull, Adams (2012)", "Medlyn et al. (2011)",  "Leuning (1995)", "Ball, Woodrow, Berry (1987)"])
         if(model_name=="Buckley, Turnbull, Adams (2012)"):
             st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
 
         if(model_name=="Medlyn et al. (2011)"):
             st.latex(r"g_{sw}(A,D,C_a) = g_0 + \left(1+\frac{g_1}{\sqrt{D}}\right)\frac{A}{C_a}")
 
-        if(model_name=="Leuning et al. (1995)"):
+        if(model_name=="Leuning (1995)"):
             st.latex(r"g_{sw}(A,C_s,\Gamma) = g_0 + \frac{g_1 A}{(C_s - \Gamma)(1+\frac{D}{D_0})}")
         
         if(model_name=="Ball, Woodrow, Berry (1987)"):
@@ -685,7 +795,7 @@ with tabs[1]:
         model_required_cols = {
             "Buckley, Turnbull, Adams (2012)": ["gsw", "Qabs", "D"],
             "Medlyn et al. (2011)": ["gsw", "A", "D", "Ca"],
-            "Leuning et al. (1995)" : ["gsw", "A", "D"],
+            "Leuning (1995)" : ["gsw", "A", "D", "Ca", "Gamma"],
             "Ball, Woodrow, Berry (1987)": ["gsw", "A", "Cs", "H"]
         }
 
@@ -693,13 +803,13 @@ with tabs[1]:
         model_column_options = {
             "gsw": ["g", "gs", "gsw"],
             "A": ["A", "An", "Anet", "Assimilation"],
-            "Cs": ["Cs","cs","Ca","ca"],
-            "Ca": ["Ca", "ca"],
-            "H": ["RH", "rh","H","h","rh_s","RHsam","RH_sam"],
+            "Cs": ["Cs","cs","C_s","c_s","Ca","ca","C_a","c_a"],
+            "Ca": ["Ca", "ca","C_a","c_a"],
+            "H": ["RH", "rh","H","h","rh_s","rh_r","RHsam","RH_sam","RHcham","RH_cham","humidity","Humidity"],
             "Tleaf": ["Tleaf", "T", "Temp"],
             "D": ["VPDleaf","VPD", "vpd","D"],
-            "Qamb": ["PPFD", "Q", "Qin", "Qamb","PAR"],
-            "Qabs": ["PPFD", "Q", "Qin", "Qamb","PAR"],
+            "Qamb": ["PPFD", "Q", "Qin", "Qamb","PAR","Qamb_out"],
+            "Qabs": ["PPFD", "Q", "Qin", "Qamb","PAR","Qabs"],
             "Gamma" : ["Gamma","gamma","compensation_point"]
         }
 
@@ -709,12 +819,12 @@ with tabs[1]:
         # ---- AUTO-DETECTION ----
         for key in required_keys:
             options = model_column_options.get(key, [])
-            found = next((col for col in df.columns if col in options), None)
+            found = next((col for col in filtered_df.columns if col in options), None)
             found_cols[key] = found
 
         if all(found_cols.values()):
             st.subheader("Auto-Detected Columns For Fitting")
-            selected_data = df[[found_cols[k] for k in required_keys]].copy()
+            selected_data = filtered_df[[found_cols[k] for k in required_keys]].copy()
             selected_data.columns = required_keys
             st.dataframe(selected_data.head(), hide_index=True)
 
@@ -732,32 +842,41 @@ with tabs[1]:
         if st.session_state.get("reselect_gs_columns", False):
             st.write(f"### Select Columns for {model_name}")
 
-            col_options = list(df.columns)
+            col_options = list(filtered_df.columns)
             manual_selection = {}
 
             for key in required_keys:
                 default_index = col_options.index(found_cols[key]) if found_cols[key] in col_options else 0
                 manual_selection[key] = st.selectbox(f"{key}", col_options, index=default_index)
 
-            selected_data = df[[manual_selection[k] for k in required_keys]].copy()
+            selected_data = filtered_df[[manual_selection[k] for k in required_keys]].copy()
             selected_data.columns = required_keys
             st.dataframe(selected_data.head(), hide_index=True)
 
             st.session_state["selected_data"] = selected_data
         
+        species_to_fit = st.text_input("Enter species name", species)
+        variety_to_fit = st.text_input("Enter species variety", variety)
+
+        
+
+        gsw_col = next((col for col in selected_data.columns if col in model_column_options["gsw"]), None)
+        a_col = next((col for col in selected_data.columns if col in model_column_options["A"]), None)
+        rh_col = next((col for col in selected_data.columns if col in model_column_options["H"]), None)
+        cs_col = next((col for col in selected_data.columns if col in model_column_options["Cs"]), None)
+        ca_col = next((col for col in selected_data.columns if col in model_column_options["Ca"]), None)
+        light_col = next((col for col in selected_data.columns if col in model_column_options["Qabs"]), None)
+        vpd_col = next((col for col in selected_data.columns if col in model_column_options["D"]), None)
+        gamma_col = next((col for col in selected_data.columns if col in model_column_options["Gamma"]), None)
+                
         # --- UNIT CONVERSIONS ---
         st.markdown("---")
 
         abs_PAR = 0.85
 
-        gsw_candidates = ["g", "gs", "gsw"]
-        gsw_col = next((col for col in selected_data.columns if col in gsw_candidates), None)
-
         # Light-related unit conversions
-        light_candidates = ["PPFD", "Q", "Qin", "Qamb", "PAR", "Qabs"]
-        light_col = next((col for col in selected_data.columns if col in light_candidates), None)
-
         if light_col:
+            
             st.write("### Select Q (Light) Units")
             q_unit = st.radio(
                 "What unit is the given light flux data in?",
@@ -771,13 +890,11 @@ with tabs[1]:
             elif q_unit == "W/m² ambient":
                 selected_data[light_col] *= abs_PAR * 4.57
             elif q_unit == "W/m² absorbed":
-                selected_data[light_col] *= 4.57
-            # else: μmol/m²/s absorbed, do nothing
+                selected_data[light_col] *= 4.57 * new_abs_PAR / abs_PAR 
+            else: #μmol/m²/s absorbed
+                selected_data[light_col] *= new_abs_PAR / abs_PAR 
 
         # VPD-related unit conversions
-        vpd_candidates = ["VPD", "vpd", "VPDleaf", "D"]
-        vpd_col = next((col for col in selected_data.columns if col in vpd_candidates), None)
-
         if vpd_col:
             st.write("### Select D (VPD) Units")
             d_unit = st.radio(
@@ -793,84 +910,513 @@ with tabs[1]:
                 selected_data[vpd_col] *= 1000.0
             # else: mmol/mol, no change
 
-        # --- ADVANCED OPTIONS ---
-        with st.expander("Advanced Options"):
-            st.write("Customize additional settings for model fitting.")
-
-            # set_PAR_abs = st.checkbox("Set leaf PAR absorptivity (default = 0.85)", key="custom_par_check")
-            # if set_PAR_abs:
-            #     new_abs_PAR = st.number_input("Leaf PAR absorptivity", min_value=0.1, max_value=1.0, value=0.85, step=0.01)
-            #     selected_data[light_col] *= new_abs_PAR / abs_PAR 
-            #     abs_PAR = new_abs_PAR 
-
-            if species_col:
-                fit_all_species = st.checkbox("Fit each species in file?", key="fit_all_sc")
-
+        
         if st.button("Fit Model",key = "fit_sc"):
+
+            if model_name == "Ball, Woodrow, Berry (1987)":
+                x = selected_data[a_col]
+                y = selected_data[rh_col]
+                if(y.mean()>1):
+                    y = y / 100
+                w = selected_data[cs_col]
+                z = selected_data[gsw_col]
+
+                st.latex(r"g_{sw}(A,H,C_s) = g_0 + g_1 A \frac{H}{C_s}")
+                st.subheader("Best Fit Parameters")
+                p0 = [0.01, 1]
+                bounds = ([0, 0], [np.inf, np.inf])
+                print(x)
+                try:
+                    popt, _ = curve_fit(lambda X, g0, g1: BWB(X, g0, g1), 
+                                    (x, y, w), z, p0=p0, bounds=bounds)
+
+                    g0, g1 = popt
+
+
+                    # Compute R2 and RMSE
+                    z_pred = BWB((x,y,w), g0, g1)
+                    r2 = r_squared(z, z_pred)
+                    rmse_val = rmse(z, z_pred)
+
+                    # Display fitted parameters and metrics
+                    col1, col2 = st.columns(2)
+                    with col1: st.latex(r"g_0 = " + f"{g0:.2f}")  
+                    with col2: st.latex(r"g_1 = " + f"{g1:.2f}")
+                    
+                    st.latex("R^2 = " + f"{r2:.3f}")
+                    st.latex("RMSE = " + f"{rmse_val:.3f}")
+
+                    # Prepare downloadable results
+                    if(species_to_fit):
+                        results_df = pd.DataFrame({
+                            'species': [species_to_fit],
+                            'variety': [variety_to_fit],
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    else:
+                        results_df = pd.DataFrame({
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    csv = results_df.to_csv(index=False)
+                    st.dataframe(results_df,hide_index=True)
+                    st.download_button(label="Download Results as CSV", data=csv, file_name="BWB_parameters.csv", mime="text/csv")
+                    
+
+                    # Plot Light Resp
+                    A_meas = x
+                    H_meas = y
+                    Cs_meas = w
+                    gsw_meas = z
+
+                    A = np.linspace(0,50,50)    
+                    H = np.linspace(y.mean(), y.mean(), 50)
+                    Cs = np.linspace(w.mean(), w.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = BWB((A,H,Cs), g0, g1)
+
+
+                    ax.plot(A, gsw_modeled,linewidth=4,color="r",label=f"BWB Fit at H={y.mean():.2f}, Cs={w.mean():.2f}")
+                    ax.set_xlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(A_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot H Resp
+                    A_meas = x
+                    H_meas = y
+                    Cs_meas = w
+                    gsw_meas = z
+
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    H = np.linspace(0, 1, 50)
+                    Cs = np.linspace(w.mean(), w.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = BWB((A,H,Cs), g0, g1)
+
+
+                    ax.plot(H, gsw_modeled,linewidth=4,color="r",label=f"BWB Fit at A={x.mean():.2f}, Cs={w.mean():.2f}")
+                    ax.set_xlabel(r"H (/)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(H_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot Cs Resp
+
+                    A_meas = x
+                    H_meas = y
+                    Cs_meas = w
+                    gsw_meas = z
+
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    H = np.linspace(y.mean(), y.mean(), 50)
+                    Cs = np.linspace(50, 900, 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = BWB((A,H,Cs), g0, g1)
+
+
+                    ax.plot(Cs, gsw_modeled,linewidth=4,color="r",label=f"BWB Fit at A={x.mean():.2f}, H={y.mean():.2f}")
+                    ax.set_xlabel(r"C$_s$ ($\mu$mol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(Cs_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot 1:1 Modeled-Measured
+
+                    gsw_pred = z_pred
+                    gsw_meas = z
+
+                    fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
+                    ax_1to1.scatter(gsw_meas, gsw_pred, color='k', s=10, label="")
+
+                    lims = [min(min(gsw_meas), min(gsw_pred)), max(max(gsw_meas), max(gsw_pred))]
+                    ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
+
+                    ax_1to1.set_xlabel("Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_ylabel("Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_xlim(lims)
+                    ax_1to1.set_ylim(lims)
+                    ax_1to1.tick_params(axis='both', labelsize=14)
+                    for spine in ax_1to1.spines.values():
+                        spine.set_linewidth(2)
+                    ax_1to1.legend(fontsize=14)
+                    ax_1to1.set_aspect('equal', 'box')
+
+                    r2 = r_squared(gsw_meas, gsw_pred)
+                    ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                                fontsize=14, verticalalignment='top',fontfamily="serif")
+
+                    st.pyplot(fig_1to1)
+                except Exception as e:
+                    st.write("Error in fitting:", e)
+            
+            if model_name == "Medlyn et al. (2011)":
+                x = selected_data[a_col]
+                y = selected_data[vpd_col]
+                w = selected_data[ca_col]
+                z = selected_data[gsw_col]
+
+                st.latex(r"g_{sw}(A,D,C_a) = g_0 + \left(1+\frac{g_1}{\sqrt{D}}\right)\frac{A}{C_a}")
+                st.subheader("Best Fit Parameters")
+                p0 = [0.01, 1]
+                bounds = ([0, 0], [np.inf, np.inf])
+                print(x)
+                try:
+                    popt, _ = curve_fit(lambda X, g0, g1: MED(X, g0, g1), 
+                                    (x, y, w), z, p0=p0, bounds=bounds)
+
+                    g0, g1 = popt
+
+
+                    # Compute R2 and RMSE
+                    z_pred = MED((x,y,w), g0, g1)
+                    r2 = r_squared(z, z_pred)
+                    rmse_val = rmse(z, z_pred)
+
+                    # Display fitted parameters and metrics
+                    col1, col2 = st.columns(2)
+                    with col1: st.latex(r"g_0 = " + f"{g0:.2f}")  
+                    with col2: st.latex(r"g_1 = " + f"{g1:.2f}")
+                    
+                    st.latex("R^2 = " + f"{r2:.3f}")
+                    st.latex("RMSE = " + f"{rmse_val:.3f}")
+
+                    # Prepare downloadable results
+                    if(species_to_fit):
+                        results_df = pd.DataFrame({
+                            'species': [species_to_fit],
+                            'variety': [variety_to_fit],
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    else:
+                        results_df = pd.DataFrame({
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    csv = results_df.to_csv(index=False)
+                    st.dataframe(results_df,hide_index=True)
+                    st.download_button(label="Download Results as CSV", data=csv, file_name="BWB_parameters.csv", mime="text/csv")
+                    
+
+                    # Plot Light Resp
+                    A_meas = x
+                    D_meas = y
+                    Ca_meas = w
+                    gsw_meas = z
+
+                    A = np.linspace(0,50,50)    
+                    D = np.linspace(y.mean(), y.mean(), 50)
+                    Ca = np.linspace(w.mean(), w.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = MED((A,D,Ca), g0, g1)
+
+
+                    ax.plot(A, gsw_modeled,linewidth=4,color="r",label=f"MED Fit at D={y.mean():.2f}, Ca={w.mean():.2f}")
+                    ax.set_xlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(A_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot VPD Resp
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    D = np.linspace(1, 50, 50)
+                    Ca = np.linspace(w.mean(), w.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = MED((A,D,Ca), g0, g1)
+
+
+                    ax.plot(D, gsw_modeled,linewidth=4,color="r",label=f"MED Fit at A={x.mean():.2f}, Ca={w.mean():.2f}")
+                    ax.set_xlabel(r"D (mmol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(D_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot Cs Resp
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    D = np.linspace(y.mean(), y.mean(), 50)
+                    Ca = np.linspace(20, 900, 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = MED((A,D,Ca), g0, g1)
+
+                    ax.plot(Ca, gsw_modeled,linewidth=4,color="r",label=f"MED Fit at A={x.mean():.2f}, D={y.mean():.2f}")
+                    ax.set_xlabel(r"C$_a$ ($\mu$mol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+                    ax.scatter(Ca_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot 1:1 Modeled-Measured
+                    gsw_pred = z_pred
+                    gsw_meas = z
+
+                    fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
+                    ax_1to1.scatter(gsw_meas, gsw_pred, color='k', s=10, label="")
+
+                    lims = [min(min(gsw_meas), min(gsw_pred)), max(max(gsw_meas), max(gsw_pred))]
+                    ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
+
+                    ax_1to1.set_xlabel("Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_ylabel("Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_xlim(lims)
+                    ax_1to1.set_ylim(lims)
+                    ax_1to1.tick_params(axis='both', labelsize=14)
+                    for spine in ax_1to1.spines.values():
+                        spine.set_linewidth(2)
+                    ax_1to1.legend(fontsize=14)
+                    ax_1to1.set_aspect('equal', 'box')
+
+                    r2 = r_squared(gsw_meas, gsw_pred)
+                    ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                                fontsize=14, verticalalignment='top',fontfamily="serif")
+
+                    st.pyplot(fig_1to1)
+                except Exception as e:
+                    st.write("Error in fitting:", e)
+
+            if model_name == "Leuning (1995)":
+                x = selected_data[a_col]
+                y = selected_data[vpd_col]
+                w = selected_data[cs_col]
+                u = selected_data[gamma_col]
+                z = selected_data[gsw_col]
+
+                st.latex(r"g_{sw}(A,C_s,\Gamma) = g_0 + \frac{g_1 A}{(C_s - \Gamma)(1+\frac{D}{D_0})}")
+                st.subheader("Best Fit Parameters")
+                p0 = [0.01, 1, 1]
+                bounds = ([0, 0, 0], [np.inf, np.inf, np.inf])
+                print(x)
+                try:
+                    popt, _ = curve_fit(lambda X, g0, g1, D0: LEU(X, g0, g1, D0), 
+                                    (x, y, w, u), z, p0=p0, bounds=bounds)
+
+                    g0, g1, D0 = popt
+
+
+                    # Compute R2 and RMSE
+                    z_pred = LEU((x,y,w,u), g0, g1, D0)
+                    r2 = r_squared(z, z_pred)
+                    rmse_val = rmse(z, z_pred)
+
+                    # Display fitted parameters and metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1: st.latex(r"g_0 = " + f"{g0:.2f}")  
+                    with col2: st.latex(r"g_1 = " + f"{g1:.2f}")
+                    with col3: st.latex(r"D0 = " + f"{D0:.2f}")
+                    
+                    st.latex("R^2 = " + f"{r2:.3f}")
+                    st.latex("RMSE = " + f"{rmse_val:.3f}")
+
+                    # Prepare downloadable results
+                    if(species_to_fit):
+                        results_df = pd.DataFrame({
+                            'species': [species_to_fit],
+                            'variety': [variety_to_fit],
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'D0': [round(D0,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    else:
+                        results_df = pd.DataFrame({
+                            'g0': [round(g0,4)],
+                            'g1': [round(g1,4)],
+                            'D0': [round(D0,4)],
+                            'Rsquared': [round(r2,4)],
+                            'RMSE': [round(rmse_val,4)]
+                        })
+                    csv = results_df.to_csv(index=False)
+                    st.dataframe(results_df,hide_index=True)
+                    st.download_button(label="Download Results as CSV", data=csv, file_name="LEU_parameters.csv", mime="text/csv")
+                    
+
+                    # Plot Light Resp
+                    A_meas = x
+                    D_meas = y
+                    Cs_meas = w
+                    Gamma_meas = u
+                    gsw_meas = z
+
+                    A = np.linspace(0,50,50)    
+                    D = np.linspace(y.mean(), y.mean(), 50)
+                    Cs = np.linspace(w.mean(), w.mean(), 50)
+                    Gamma = np.linspace(u.mean(), u.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = LEU((A,D,Cs,Gamma), g0, g1, D0)
+
+
+                    ax.plot(A, gsw_modeled,linewidth=4,color="r",label=f"LEU Fit at D={y.mean():.2f}, Cs={w.mean():.2f}, Gamma={u.mean():.2f}")
+                    ax.set_xlabel(r"A ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(A_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot VPD Resp
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    D = np.linspace(1, 50, 50)
+                    Cs = np.linspace(w.mean(), w.mean(), 50)
+                    Gamma = np.linspace(u.mean(), u.mean(), 50)
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = LEU((A,D,Cs,Gamma), g0, g1, D0)
+
+
+                    ax.plot(D, gsw_modeled,linewidth=4,color="r",label=f"LEU Fit at A={x.mean():.2f}, Cs={w.mean():.2f}")
+                    ax.set_xlabel(r"D (mmol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(D_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot Cs Resp
+                    A_meas = x
+                    D_meas = y
+                    Cs_meas = w
+                    Gamma_meas = u
+                    gsw_meas = z
+
+                    A = np.linspace(x.mean(),x.mean(),50)    
+                    D = np.linspace(y.mean(), y.mean(), 50)
+                    Cs = np.linspace(20, 900, 50)
+                    Gamma = np.linspace(u.mean(), u.mean(), 50)
+
+
+                    fig, ax = plt.subplots(figsize=(10, 10))
+
+                    gsw_modeled = LEU((A,D,Cs,Gamma), g0, g1, D0)
+
+
+                    ax.plot(Cs, gsw_modeled,linewidth=4,color="r",label=f"LEU Fit at A={x.mean():.2f}, D={y.mean():.2f}")
+                    ax.set_xlabel(r"C$_s$ ($\mu$mol mol$^{-1}$)", fontsize=16)
+                    ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.tick_params(axis='both', labelsize=14) 
+                    for spine in ax.spines.values():
+                        spine.set_linewidth(2)
+
+
+                    ax.set_ylim([0,max(1,max(max(gsw_meas),max(gsw_modeled))*1.1)])
+
+                    ax.scatter(Cs_meas, gsw_meas, c="k", s=25, label="Measured gsw")
+                    ax.legend(fontsize=14)
+                    st.pyplot(fig)
+
+                    # Plot 1:1 Modeled-Measured
+
+                    gsw_pred = z_pred
+                    gsw_meas = z
+
+                    fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
+                    ax_1to1.scatter(gsw_meas, gsw_pred, color='k', s=10, label="")
+
+                    lims = [min(min(gsw_meas), min(gsw_pred)), max(max(gsw_meas), max(gsw_pred))]
+                    ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
+
+                    ax_1to1.set_xlabel("Measured g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_ylabel("Modeled g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax_1to1.set_xlim(lims)
+                    ax_1to1.set_ylim(lims)
+                    ax_1to1.tick_params(axis='both', labelsize=14)
+                    for spine in ax_1to1.spines.values():
+                        spine.set_linewidth(2)
+                    ax_1to1.legend(fontsize=14)
+                    ax_1to1.set_aspect('equal', 'box')
+
+                    r2 = r_squared(gsw_meas, gsw_pred)
+                    ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
+                                fontsize=14, verticalalignment='top',fontfamily="serif")
+
+                    st.pyplot(fig_1to1)
+                except Exception as e:
+                    st.write("Error in fitting:", e)
+
             if model_name == "Buckley, Turnbull, Adams (2012)":
                 x = selected_data[light_col]
                 y = selected_data[vpd_col]
                 z = selected_data[gsw_col]
 
-                # if species_col:
-                #     if fit_all_species:
-                #         st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
-
-                #         species_fits = []
-                #         fig, ax = plt.subplots()
-
-                #         for species in species_list:
-                #             data_sc = all_data_sc
-                #             species_data_sc = data_sc[data_sc[species_col] == species]
-                #             x = species_data_sc[st.session_state.x_colum_sc]
-                #             y = species_data_sc[st.session_state.y_colum_sc]
-
-                #             try:
-                #                 popt, _ = curve_fit(lambda X, Em, i0, k, b: BTA(X, Em, i0, k, b), 
-                #                         (x, y), z, p0=p0, bounds=bounds)
-
-                #                 Em, i0, k, b = popt
-
-
-                #                 # Compute R2 and RMSE
-                #                 z_pred = BTA((x,y), *popt)
-                #                 r2 = r_squared(z, z_pred)
-                #                 rmse_val = rmse(z, z_pred)
-
-                #                 # Store results
-                #                 species_fits.append({
-                #                     'species': species,
-                #                     'E_m,': round(Em, 4),
-                #                     'i_0': round(i0, 4),
-                #                     'k': round(k, 4),
-                #                     'b': round(b,4),
-                #                     'Rsquared': round(r2, 3),
-                #                     'RMSE': round(rmse_val, 3)
-                #                 })
-
-                #                 # Plot data and fit
-                #                 scatter = ax.plot(x, y, 'o')
-                #                 xx = np.linspace(0.5, 1, 100)
-                #                 ax.plot(xx, PV(xx, *popt), '-', label=f"{species}",color=scatter[0].get_color())
-
-                #             except Exception as e:
-                #                 st.write(f"Error fitting {species}: {e}")
-
-                #         # Display Table
-                #         results_df = pd.DataFrame(species_fits)
-                #         st.subheader("Best Fit Parameters for All Species")
-                #         st.dataframe(results_df)
-
-                #         # Download Button
-                #         csv = results_df.to_csv(index=False)
-                #         st.download_button("Download Results as CSV", data=csv, file_name="fitted_parameters.csv", mime="text/csv")
-
-                #         # Finalize Plot
-                #         ax.set_xlabel("Relative Water Content (/)")
-                #         ax.set_ylabel("Leaf Water Potential (MPa)")
-                #         ax.legend()
-                #         st.pyplot(fig)
-                # else:
                 st.latex(r"g_{sw}(Q,D) = \frac{E_m (Q+i_0)}{k+bQ+(Q+i_0)D}")
                 st.subheader("Best Fit Parameters")
                 p0 = [5, 10, 5e3, 5]
@@ -922,18 +1468,6 @@ with tabs[1]:
                     st.dataframe(results_df,hide_index=True)
                     st.download_button(label="Download Results as CSV", data=csv, file_name="BTA_parameters.csv", mime="text/csv")
                     
-
-                    # Plot results
-                    # fig, ax = plt.subplots()
-                    # ax.plot(x, y, 'ko', label="Measured")
-                    # xx = np.linspace(0.5, 1, 100)
-                    # ax.plot(xx, PV(xx, *popt), 'r-', label="Modeled")
-                    # ax.set_xlabel("Relative Water Content (/)")
-                    # ax.set_ylabel("Leaf Water Potential (MPa)")
-                    # if species_col:
-                    #     ax.set_title(selected_species)
-                    # ax.legend()
-                    # st.pyplot(fig)
 
                     # Plot Light Resp
                     Q_meas = x
@@ -1012,7 +1546,7 @@ with tabs[1]:
                     ax_1to1.legend(fontsize=14)
                     ax_1to1.set_aspect('equal', 'box')
 
-                    r2 = computeR2(gsw_meas, gsw_pred)
+                    r2 = r_squared(gsw_meas, gsw_pred)
                     ax_1to1.text(0.05, 0.95, f"R$^2$ = {r2:.2f}", transform=ax_1to1.transAxes,
                                 fontsize=14, verticalalignment='top',fontfamily="serif")
 
