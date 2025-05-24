@@ -671,9 +671,8 @@ with tabs[0]:
 
 # ---- STOMATAL CONDUCTANCE ----
 with tabs[1]:
-
     if "expand_advanced_options" not in st.session_state:
-            st.session_state["expand_advanced_options"] = False
+        st.session_state["expand_advanced_options"] = False
 
     if "filter_val" not in st.session_state:
         st.session_state["filter_val"] = ""
@@ -690,9 +689,9 @@ with tabs[1]:
             df = pd.read_excel(uploaded_file)
 
         st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
-        st.dataframe(df.head(), hide_index=True)
 
-        # Only update original_df and filtered_df if a new file is uploaded
+        st.dataframe(df,hide_index=True)
+
         if "uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state["uploaded_filename"]:
             st.session_state["uploaded_filename"] = uploaded_file.name
             st.session_state["original_df"] = df.copy()
@@ -700,17 +699,11 @@ with tabs[1]:
             st.session_state["filter_val"] = ""
             st.session_state["filter_button_pressed"] = False
 
-        # Only create or update the filtered_df if it doesn’t already exist
-        if "filtered_df" not in st.session_state:
-            st.session_state["filtered_df"] = st.session_state["original_df"].copy()
-
-        # Always use session copy so filters persist through model selection
-        df = st.session_state["original_df"]
+        original_df = st.session_state["original_df"]
         filtered_df = st.session_state["filtered_df"]
 
-        
-        
-        # --- ADVANCED OPTIONS ---
+
+        # ---- ADVANCED OPTIONS ----
         with st.expander("Advanced Options", expanded=st.session_state["expand_advanced_options"]):
             st.write("Customize additional settings for model fitting.")
 
@@ -718,29 +711,29 @@ with tabs[1]:
             if set_PAR_abs:
                 new_abs_PAR = st.number_input("Leaf PAR absorptivity", min_value=0.1, max_value=1.0, value=0.85, step=0.01)
                 st.session_state["expand_advanced_options"] = True
-            # --- Column Filter Feature ---
+            else:
+                new_abs_PAR = 0.85
+
             st.markdown("Filter Rows by Column Value")
             filter_col = st.selectbox("Select column to filter", df.columns)
 
             if pd.api.types.is_numeric_dtype(df[filter_col]):
                 operator = st.selectbox("Operator", [">", "<", ">=", "<=", "==", "!="])
                 filter_val = st.number_input("Value", value=float(df[filter_col].mean()))
-                st.session_state["filter_val"] = filter_val
-                filter_expr = f"`{filter_col}` {operator} @filter_val"
             else:
                 operator = st.selectbox("Operator", ["==", "!=", "contains", "not contains"])
                 filter_val = st.text_input("Value", value=st.session_state.get("filter_val", ""))
-                st.session_state["filter_val"] = filter_val
-                if operator == "contains":
-                    filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False)"
-                elif operator == "not contains":
-                    filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False) == False"
-                else:
-                    filter_expr = f"`{filter_col}` {operator} @filter_val"
 
-            # --- Apply Filter Button (above the dataframe)
-            col1, col2 = st.columns([1,1])
+            st.session_state["filter_val"] = filter_val
 
+            if operator == "contains":
+                filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False)"
+            elif operator == "not contains":
+                filter_expr = f"`{filter_col}`.str.contains(@filter_val, case=False, na=False) == False"
+            else:
+                filter_expr = f"`{filter_col}` {operator} @filter_val"
+
+            col1, col2 = st.columns([1, 1])
             with col1:
                 apply_clicked = st.button("Apply Filter")
             with col2:
@@ -753,27 +746,23 @@ with tabs[1]:
                     st.session_state["expand_advanced_options"] = True
                 except Exception as e:
                     st.error(f"Filter error: {e}")
-            
-
 
             if clear_clicked:
                 st.session_state["filtered_df"] = st.session_state["original_df"].copy()
                 st.session_state["filter_val"] = ""
                 st.session_state["filter_button_pressed"] = False
                 st.session_state["expand_advanced_options"] = True
-            
 
-
-            # --- Show dataframe (in the middle)
             if st.session_state.get("filter_button_pressed", False):
                 st.success(f"Filtered data: {len(st.session_state['filtered_df'])} rows remaining.")
-                st.dataframe(st.session_state["filtered_df"].head(), hide_index=True)
             else:
                 st.info("Filter cleared.")
-                st.dataframe(st.session_state["original_df"].head(), hide_index=True)
+
+            st.dataframe(st.session_state["filtered_df"].head(), hide_index=True)
+
 
         species_col = next((col for col in filtered_df.columns if col.lower() == "species"), None)
-        variety_col = next((col for col in filtered_df.columns if col.lower() == "species"), None)
+        variety_col = next((col for col in filtered_df.columns if col.lower() == "variety"), None)
 
         species = filtered_df[species_col].iloc[0] if species_col else ""
         variety = filtered_df[variety_col].iloc[0] if variety_col else ""
@@ -1483,7 +1472,7 @@ with tabs[1]:
 
 
                     ax.plot(Q, gsw_modeled,linewidth=4,color="r",label="BMF Fit")
-                    ax.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
+                    ax.set_xlabel(r"Q ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=16)
                     ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
                     ax.tick_params(axis='both', labelsize=14) 
                     for spine in ax.spines.values():
@@ -1497,7 +1486,6 @@ with tabs[1]:
                     st.pyplot(fig)
 
                     # Plot VPD Resp
-
                     Q_meas = x
                     D_meas = y
                     gsw_meas = z
@@ -1509,9 +1497,8 @@ with tabs[1]:
 
                     gsw_modeled = BTA((Q,D), Em,i0,k,b)
 
-
                     ax.plot(D, gsw_modeled,linewidth=4,color="r")
-                    ax.set_xlabel(r"$D$ (mmol mol$^{-1}$)", fontsize=16)
+                    ax.set_xlabel(r"D (mmol mol$^{-1}$)", fontsize=16)
                     ax.set_ylabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=16)
                     ax.tick_params(axis='both', labelsize=14) 
                     for spine in ax.spines.values():
@@ -1569,8 +1556,8 @@ with tabs[1]:
                     ax.scatter(Q_meas, D_meas, gsw_meas, c='k', s=25, label="Measured gsw")
 
                     ax.plot_surface(Q, D, gsw_modeled, color="r",edgecolor='none', alpha=0.8, label="BMF Fit")
-                    ax.set_xlabel(r"$Q$ ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=12)
-                    ax.set_ylabel(r"$D$ (mmol mol$^{-1}$)", fontsize=12)
+                    ax.set_xlabel(r"Q ($\mu$mol m$^{-2}$ s$^{-1}$)", fontsize=12)
+                    ax.set_ylabel(r"D (mmol mol$^{-1}$)", fontsize=12)
                     ax.set_zlabel(r"g$_{sw}$ (mol m$^{-2}$ s$^{-1}$)", fontsize=12)
                     ax.view_init(elev=2, azim=20)
 
@@ -1584,8 +1571,6 @@ with tabs[1]:
 
                     st.pyplot(fig)
 
-                    
-                    
                 except Exception as e:
                     st.write("Error in fitting:", e)
 # ---- PRESSURE-VOLUME MODEL ----
