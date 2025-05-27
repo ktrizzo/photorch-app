@@ -18,7 +18,7 @@ PhoTorch provides an intuitive, interactive platform for fitting widely used pla
 ## 🚀 Key Features
 - Photosynthesis Model Fitting
   - Fit the full Farquhar-von Caemmerer-Berry (1980) model for:
-    - V<sub>cmax25</sub>, J<sub>max25</sub>, TPU<sub>25</sub>, and 16+ others
+    - V<sub>cmax25</sub>, J<sub>max25</sub>, TPU<sub>25</sub>, and 16+ other parameters
   - Integrate CO₂ (A–Ci), light response (A–Q), and temperature response (A-T) curves
   - Recover Temperature Optima
 - Stomatal Conductance Model Fitting
