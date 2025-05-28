@@ -328,7 +328,7 @@ with tabs[0]:
             if Fitgm:
                 param_dict["gm"] = fvcb.gm.item()
             if FitGamma:
-                param_dict["Gamma25"] = fvcb.Gamma25.item()
+                param_dict["GammaS25"] = fvcb.Gamma25.item()
             if FitKc:
                 param_dict["Kc"] = fvcb.Kc25.item()
             if FitKo:
@@ -342,8 +342,8 @@ with tabs[0]:
             os.makedirs(os.path.dirname(savepath), exist_ok=True)
 
             vars = ["species", "variety", "Vcmax25", "Jmax25", "TPU25", "Rd25", "alpha", "theta", "Vcmax_dHa", "Vcmax_Topt", "Vcmax_dHd",
-                    "Jmax_dHa", "Jmax_Topt", "Jmax_dHd", "TPU_dHa", "TPU_Topt", "TPU_dHd", "Rd_dHa", "Gamma25", "Gamma_dHa",
-                    "Kc25", "Kc_dHa", "Ko25", "Ko_dHa", "O"]
+                    "Jmax_dHa", "Jmax_Topt", "Jmax_dHd", "TPU_dHa", "TPU_Topt", "TPU_dHd", "Rd_dHa", "GammaS25", "GammaS_dHa",
+                    "Kc25", "Kc_dHa", "Ko25", "Ko_dHa", "O", "alphaG", "gm"]
             
             # Helper for placeholder value
             def t2(x_name):
@@ -379,7 +379,9 @@ with tabs[0]:
                 fvcb.TempResponse.dHa_Kc.item() if hasattr(fvcb.TempResponse, "dHa_Kc") else 99999,
                 fvcb.Ko25.item(),
                 fvcb.TempResponse.dHa_Ko.item() if hasattr(fvcb.TempResponse, "dHa_Ko") else 99999,
-                fvcb.Oxy.item()
+                fvcb.Oxy.item(),
+                fvcb.alphaG.item(),
+                fvcb.allparams.gm.item()
             ]
 
             params = pd.DataFrame([vals], columns=vars)
