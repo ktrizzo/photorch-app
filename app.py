@@ -260,8 +260,14 @@ with tabs[0]:
         variety_to_fit = st.text_input("Enter species variety", "Variety")
 
         # User Inputs for fitting settings
-        LightResponseType = st.selectbox("Select Light Response Type", [1, 2], index=1)
-        TemperatureResponseType = st.selectbox("Select Temperature Response Type", [1, 2], index=1)
+        LightResponseOptions = {"Rectangular Hyperbola (1)":1,"Nonrectangular Hyperbola (2)":2}
+        LightResponseType = st.selectbox("Select Light Response Type", LightResponseOptions.keys(), index=1)
+        LightResponseType = LightResponseOptions[LightResponseType]
+
+        TemperatureResponseOptions = {"Arrhenius (1)":1,"Peaked (2)":2}
+        TemperatureResponseType = st.selectbox("Select Temperature Response Type", TemperatureResponseOptions.keys(), index=1)
+        TemperatureResponseType = TemperatureResponseOptions[TemperatureResponseType]
+        
         Fitgm = st.checkbox("Fit gm (Mesophyll conductance)", value=False)
         FitGamma = st.checkbox("Fit Gamma (Photorespiration)", value=False)
         FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
