@@ -124,7 +124,8 @@ def printFvCBParameters(fvcb,LightResponseType=1,TemperatureResponseType=2,Fitgm
     if(LightResponseType==2):
         print(f"theta = {fvcb.LightResponse.theta[0]}")
     if(Fitgm):
-        print(f"gm = {fvcb.gm[0]}")
+        gm_val = fvcb.gm.item() if fvcb.gm.ndim == 0 else fvcb.gm[0].item()
+        print(f"gm = {gm_val}")
     if(FitGamma):
         print(f"Gamma25 = {fvcb.Gamma25[0]}")
     if(FitKc):

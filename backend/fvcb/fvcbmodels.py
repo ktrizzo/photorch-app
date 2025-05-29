@@ -21,7 +21,7 @@ class allparameters(nn.Module):
         self.Gamma25 = torch.tensor(42.75)
         self.alphaG_r = torch.tensor(-10.0)
         self.alphaG = torch.sigmoid(self.alphaG_r)
-        self.gm = torch.tensor(100.0)
+        self.gm = torch.tensor(0.25)
         self.Rdratio_r = torch.tensor(-10)
         self.Rdratio = torch.tensor(0.01)
 
@@ -170,9 +170,12 @@ class TemperatureResponse(nn.Module):
             self.getJmax = self.getJmaxF2
             self.getTPU = self.getTPUF2
             self.getRd = self.getRdF0
-            self.dHd_Vcmax = self.allparams.dHd_Vcmax
-            self.dHd_Jmax = self.allparams.dHd_Jmax
-            self.dHd_TPU = self.allparams.dHd_TPU
+            #self.dHd_Vcmax = self.allparams.dHd_Vcmax
+            #self.dHd_Jmax = self.allparams.dHd_Jmax
+            #self.dHd_TPU = self.allparams.dHd_TPU
+            self.dHd_Vcmax = nn.Parameter(torch.ones(self.num_FGs) * self.allparams.dHd_Vcmax)
+            self.dHd_Jmax = nn.Parameter(torch.ones(self.num_FGs) * self.allparams.dHd_Jmax)
+            self.dHd_TPU = nn.Parameter(torch.ones(self.num_FGs) * self.allparams.dHd_TPU)
             self.dHd_R_Vcmax = self.dHd_Vcmax / self.allparams.R
             self.dHd_R_Jmax = self.dHd_Jmax / self.allparams.R
             self.dHd_R_TPU = self.dHd_TPU / self.allparams.R
@@ -258,15 +261,15 @@ class TemperatureResponse(nn.Module):
         return TPU
 
     def getVcmaxF2(self, Vcmax_o):
-        Vcmax = self.tempresp_fun2(Vcmax_o, self.dHa_Vcmax, self.dHd_Vcmax, self.Topt_Vcmax, self.dHd_R_Vcmax)
+        Vcmax = self.tempresp_fun2(Vcmax_o, self.dHa_Vcmax, self.dHd_Vcmax, self.Topt_Vcmax, self.dHd_Vcmax/self.allparams.R)
         return Vcmax
 
     def getJmaxF2(self, Jmax_o):
-        Jmax = self.tempresp_fun2(Jmax_o, self.dHa_Jmax, self.dHd_Jmax, self.Topt_Jmax, self.dHd_R_Jmax)
+        Jmax = self.tempresp_fun2(Jmax_o, self.dHa_Jmax, self.dHd_Jmax, self.Topt_Jmax, self.dHd_Jmax/self.allparams.R)
         return Jmax
 
     def getTPUF2(self, TPU_o):
-        TPU = self.tempresp_fun2(TPU_o, self.dHa_TPU, self.dHd_TPU, self.Topt_TPU, self.dHd_R_TPU)
+        TPU = self.tempresp_fun2(TPU_o, self.dHa_TPU, self.dHd_TPU, self.Topt_TPU, self.dHd_TPU/self.allparams.R)
         return TPU
 
     def getdS(self, tag: str):
@@ -296,7 +299,7 @@ class TemperatureResponse(nn.Module):
             param.requires_grad = fitting
 
 class FvCB(nn.Module):
-    def __init__(self, lcd, LightResp_type :int = 0, TempResp_type : int = 1, onefit : bool = False, fitgm: bool = False, fitgamma: bool = False, fitKc: bool = False, fitKo: bool = False, fitag: bool = False, fitRd: bool = True, fitRdratio: bool = False, allparams = None, printout: bool =True):
+    def __init__(self, lcd, LightResp_type :int = 0, TempResp_type : int = 1, onefit : bool = False, fitgm: bool = False, fitgamma: bool = False, fitKc: bool = False, fitKo: bool = False, fitag: bool = False, fitRd: bool = True, fitRdratio: bool = False, fitdHd: bool = False, allparams = None, printout: bool =True):
         super(FvCB, self).__init__()
         self.lcd = lcd
         if allparams is None:
@@ -345,7 +348,8 @@ class FvCB(nn.Module):
         if self.fitgm:
             self.gm = nn.Parameter(torch.ones(self.lcd.num_FGs)*self.allparams.gm)
         else:
-            self.Cc = self.lcd.Ci
+            self.gm = self.allparams.gm
+            self.Cc = self.lcd.Ci - self.lcd.A / self.allparams.gm
         
         self.fitgamma = fitgamma
         self.Gamma25 = self.allparams.Gamma25
@@ -373,6 +377,16 @@ class FvCB(nn.Module):
             
         if not self.fitKc and not self.fitKo:
             self.Kco = self.Kc * (1 + self.Oxy / self.Ko)
+
+        self.fitdHd = fitdHd
+        if self.fitdHd:
+            self.dHd_Vcmax = nn.Parameter(torch.ones(self.lcd.num_FGs).to(self.lcd.device) * self.allparams.dHd_Vcmax)
+            self.dHd_Jmax = nn.Parameter(torch.ones(self.lcd.num_FGs).to(self.lcd.device) * self.allparams.dHd_Jmax)
+            self.dHd_TPU = nn.Parameter(torch.ones(self.lcd.num_FGs).to(self.lcd.device) * self.allparams.dHd_TPU)
+        else:
+            self.dHd_Vcmax = self.allparams.dHd_Vcmax
+            self.dHd_Jmax = self.allparams.dHd_Jmax
+            self.dHd_TPU = self.allparams.dHd_TPU
 
     def expandparam(self, vcmax, jmax, tpu, rd):
         if self.onefit:
@@ -580,6 +594,9 @@ class Loss(nn.Module):
                     loss_light += self.relu(fvc_model.LightResponse.alpha - 0.9)[0]
                     loss_light += self.relu(fvc_model.LightResponse.theta - 0.9)[0]
         loss += loss_light * 100
+
+        # penality that gm greater than 1
+        loss += 200.0*torch.sum(self.relu(fvc_model.gm - 0.5))
 
         # penalty that Ap less than 0
         loss += torch.sum(self.relu(-Ap_o))

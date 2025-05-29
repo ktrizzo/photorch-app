@@ -72,4 +72,40 @@ def evaluateFvCB(x, p):
     T = x[:, 2]
 
     # Compute assimilation rates
-    return A(Ci, Q, T)
+    #return A(Ci, Q, T)
+
+    # Net assimilation rate (given Cc)
+    A_given_Cc = lambda Cc, Q, T: hmin(tpu(Cc, T), hmin(vr(Cc, T), jr(Cc, Q, T)))
+
+    # Mesophyll conductance (convert to consistent units if needed)
+    gm = p.get('gm', None)
+
+    # Inputs
+    Ci = x[:, 0]
+    Q = x[:, 1]
+    T = x[:, 2]
+
+    A_out = np.zeros_like(Ci)
+
+    for i in range(len(Ci)):
+        if gm is None or gm <= 0:
+            # If gm is missing or zero, assume Ci = Cc (original behavior)
+            A_out[i] = A_given_Cc(Ci[i], Q[i], T[i])
+        else:
+            # Iteratively solve for Cc such that A(Cc) = gm * (Ci - Cc)
+            Ci_i = Ci[i]
+            Q_i = Q[i]
+            T_i = T[i]
+
+            # Initial guess: Cc = Ci - A / gm, but start with Ci
+            Cc = Ci_i - 20/0.2
+            for _ in range(40):  # max 20 iterations
+                A_i = A_given_Cc(Cc, Q_i, T_i)
+                Cc_new = Ci_i - A_i / gm
+                if np.abs(Cc_new - Cc) < 1e-6:
+                    break
+                Cc = Cc_new
+
+            A_out[i] = A_given_Cc(Cc, Q_i, T_i)
+
+    return A_out

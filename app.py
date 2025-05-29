@@ -268,10 +268,12 @@ with tabs[0]:
         TemperatureResponseType = st.selectbox("Select Temperature Response Type", TemperatureResponseOptions.keys(), index=1)
         TemperatureResponseType = TemperatureResponseOptions[TemperatureResponseType]
         
-        Fitgm = st.checkbox("Fit gm (Mesophyll conductance)", value=False)
-        FitGamma = st.checkbox("Fit Gamma (Photorespiration)", value=False)
-        FitKc = st.checkbox("Fit Kc (Carboxylation)", value=False)
-        FitKo = st.checkbox("Fit Ko (Oxygenation)", value=False)
+        Fitgm = st.checkbox("Fit gₘ (Mesophyll conductance)", value=False)
+        FitGamma = st.checkbox("Fit Γ* (Photorespiratory Compensation Point)", value=False)
+        FitKc = st.checkbox("Fit Kc (Carboxylation Michaelis-Menten Constant)", value=False)
+        FitKo = st.checkbox("Fit Ko (Oxygenation Michaelis-Menten Constant)", value=False)
+        Fitag = st.checkbox(f"Fit α₉ (Glycolate Recycle Fraction for TPU)", value=False)
+        FitdHd = st.checkbox(f"Fit ΔHd (Deactivation Enthalpies for Peaked Temperatures)", value=False)
         
         # Advanced Hyperparameters Section
         learningRate = st.slider("Learning Rate", min_value=0.01, max_value=1.0, value=0.08)
@@ -296,7 +298,9 @@ with tabs[0]:
                 fitgamma=FitGamma,
                 fitKc=FitKc,
                 fitKo=FitKo,
-                fitgm=Fitgm
+                fitgm=Fitgm,
+                fitag=Fitag,
+                fitdHd=FitdHd
             )
             with st.spinner(""):
                 progress_text = st.empty()
@@ -381,7 +385,7 @@ with tabs[0]:
                 fvcb.TempResponse.dHa_Ko.item() if hasattr(fvcb.TempResponse, "dHa_Ko") else 99999,
                 fvcb.Oxy.item(),
                 fvcb.alphaG.item(),
-                fvcb.allparams.gm.item()
+                fvcb.gm.item() if hasattr(fvcb, "gm") else fvcb.allparams.gm.item()
             ]
 
             params = pd.DataFrame([vals], columns=vars)
@@ -573,13 +577,14 @@ with tabs[0]:
             # Second subplot: A vs Ci and Q at T = 298.15 K
             fig3D2 = plt.figure(figsize=(10, 10))
             ax2 = fig3D2.add_subplot(1, 1, 1, projection='3d')
-            Ci = np.linspace(5, 2000, 60)
+            Ci = np.linspace(100, 2000, 60)
             Q = np.linspace(0, 2000, 60)
             Ci, Q = np.meshgrid(Ci, Q)
             T = 298.15 * np.ones_like(Ci)  # Constant temperature at 298.15 K
 
             x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
             A = evaluateFvCB(x, p)
+            A = np.maximum(-10,A)
             A = A.reshape(Ci.shape)
 
             # Plot modeled surface
