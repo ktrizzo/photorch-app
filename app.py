@@ -148,7 +148,8 @@ with tabs[0]:
             if "survey" in file.name.lower():
                 survey_dfs.append(df)
             else:
-                df["CurveID"] = numCurve
+                if "CurveID" not in df.columns:
+                    df["CurveID"] = numCurve
                 dfs.append(df)
 
         # Concatenate all dataframes
@@ -211,7 +212,7 @@ with tabs[0]:
             #st.write({k: found_cols[k] for k in ["Q", "T", "Ci", "A"]})
             selected_data = df[[found_cols["Qabs"], found_cols["Tleaf"], found_cols["Ci"], found_cols["A"],"CurveID"]].copy()
             selected_data.columns = ["Qabs", "Tleaf", "Ci", "A","CurveID"]
-            st.dataframe(selected_data.head(),hide_index=True)
+            st.dataframe(selected_data,hide_index=True)
 
             # Store in session state for downstream use
             st.session_state["selected_data"] = selected_data
@@ -521,7 +522,7 @@ with tabs[0]:
             fig_1to1, ax_1to1 = plt.subplots(figsize=(8, 8))
             ax_1to1.scatter(A_measured, A_model, color='k', s=10, label="")
 
-            lims = [min(min(A_measured), min(A_model)), max(max(A_measured), max(A_model))]
+            lims = [max(-5,min(min(A_measured), min(A_model))), max(max(A_measured), max(A_model))]
             ax_1to1.plot(lims, lims, 'k--', linewidth=2, label="1:1")
 
             ax_1to1.set_xlabel("Measured A (µmol m$^{-2}$ s$^{-1}$)", fontsize=16)
@@ -552,6 +553,7 @@ with tabs[0]:
             
             x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
             A = evaluateFvCB(x, p)  # Run the FvCB model
+            A = np.maximum(-5,A)
             A = A.reshape(Ci.shape)  # Reshape to match the grid
 
             # Plot modeled surface
@@ -570,6 +572,7 @@ with tabs[0]:
             # Plot measured data
             ax1.scatter(df["Ci"][df["Qabs"]>0.85*1900], df["Tleaf"][df["Qabs"]>0.85*1900], df["A"][df["Qabs"]>0.85*1900], c='r', s=30, label="A-Ci Curves")
             ax1.set_xticks([0,1000,2000])
+            ax1.set_zlim([-5, max(1, max(df["A"]) * 1.1)])
             ax1.legend(loc="upper right",fontsize=16)
             st.pyplot(fig3D)
 
@@ -584,7 +587,7 @@ with tabs[0]:
 
             x = np.column_stack((Ci.ravel(), Q.ravel(), T.ravel()))
             A = evaluateFvCB(x, p)
-            A = np.maximum(-10,A)
+            A = np.maximum(-5,A)
             A = A.reshape(Ci.shape)
 
             # Plot modeled surface
@@ -605,6 +608,7 @@ with tabs[0]:
             # Plot measured data on modeled surface
             ax2.scatter(df["Ci"][df["Tleaf"]<27], df["Qabs"][df["Tleaf"]<27], df["A"][df["Tleaf"]<27], c='r', s=30,label="A-Ci Curves")
             ax2.set_xticks([0,1000,2000])
+            ax2.set_zlim([-5, max(1, max(df["A"]) * 1.1)])
             ax2.legend(loc="upper right",fontsize=16)
 
             plt.tight_layout()
