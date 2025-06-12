@@ -1,7 +1,7 @@
-# 🌱 PhoTorch
+# 🌱 PhoTorch Studio
 
 
-PhoTorch is an open-source tool for plant ecophysiologists and crop modelers, designed to streamline the fitting and analysis of core physiological models from gas exchange and water relations data.
+PhoTorch Studio is a web and desktop app for PhoTorch, an open-source Python library for plant ecophysiologists and crop modelers, designed to streamline the fitting and analysis of core physiological models from gas exchange and water relations data.
 
 🌐 Web app: Try it instantly at https://photorch.streamlit.app.
 
@@ -10,9 +10,9 @@ PhoTorch is an open-source tool for plant ecophysiologists and crop modelers, de
 📄 Accompanying publications: [[PhoTorch](https://doi.org/10.48550/arXiv.2501.15484)]
 
 
-## 🔬 What does PhoTorch do?
+## 🔬 What does PhoTorch Studio do?
 
-PhoTorch provides an intuitive, interactive platform for fitting widely used plant physiological models, enabling rapid exploration and interpretation of experimental data.
+PhoTorch Studio provides an intuitive, interactive platform for fitting widely used plant physiological models, enabling rapid exploration and interpretation of experimental data.
 
 
 ## 🚀 Key Features
@@ -44,7 +44,7 @@ PhoTorch provides an intuitive, interactive platform for fitting widely used pla
 
 ## 🧪 Who is it for?
 
-PhoTorch is designed for:
+PhoTorch Studio is designed for:
 - Field scientists needing a fast way to process LI-600 or LI-6800 data
 - Plant ecophysiologists analyzing gas exchange and water relations
 - Crop modelers calibrating parameters for predictive models
@@ -90,8 +90,8 @@ newgrp docker
 
 ### Step 1: Download the App 
 ```bash
-git clone https://github.com/ktrizzo/photorch-app.git
-cd photorch-app
+git clone https://github.com/ktrizzo/photorch-sutdio.git
+cd photorch-studio
 ```
 
 ### Step 2: Launch the App
@@ -106,7 +106,7 @@ Fit lots of models!
 
 ### Step 4: Close the App
 ```bash
-docker stop photorch-app
-docker rm photorch-app
+docker stop photorch-studio
+docker rm photorch-studio
 ```
 
