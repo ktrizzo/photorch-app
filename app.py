@@ -88,9 +88,13 @@ def rmse(y_true, y_pred):
 
 
 # Streamlit Interface
-st.title('PhoTorch')
-st.subheader('A tool for fitting common plant physiological models')
-
+st.title('PhoTorch Studio')
+st.markdown(
+    "<h3><a href='https://github.com/ktrizzo/photorch-studio' style='text-decoration: none; color: inherit;'>"
+    "A toolkit for fitting common plant physiological models"
+    "</a></h3>",
+    unsafe_allow_html=True
+)
 # Create tab navigation
 tabs = st.tabs(["Photosynthesis", "Stomatal Conductance", "Pressure-Volume","PROSPECT"])
 
@@ -99,7 +103,21 @@ tabs = st.tabs(["Photosynthesis", "Stomatal Conductance", "Pressure-Volume","PRO
 with tabs[0]:
     st.header("Photosynthesis Model Fitting")
     # File uploader
-    uploaded_files = st.file_uploader("Upload photosynthesis data files", accept_multiple_files=True)
+    with st.expander("**How to Use**"):
+        st.markdown("""
+        
+
+        - Upload files containing your A–C$_\mathrm{i}$ response data.
+        - The model of Farquhar, von Caemmerer, and Berry (1980) will be fit to the data.
+        - Make sure your files include columns for:
+            - **Net assimilation rate** (A)
+            - **Intercellular CO₂ concentration** (C$_\mathrm{i}$)
+            - **Photosynthetically active radiation** (Q$_{\mathrm{abs}}$)
+            - **Leaf temperature** (T$_{\mathrm{leaf}}$)
+
+        For more details, [see the documentation](https://github.com/ktrizzo/photorch-studio)
+        """)
+    uploaded_files = st.file_uploader("Upload photosynthesis data files", accept_multiple_files=True, label_visibility="collapsed")
     uploaded_filenames = [file.name for file in uploaded_files] if uploaded_files else []
 
     for file in uploaded_files:
@@ -155,6 +173,18 @@ with tabs[0]:
         # Concatenate all dataframes
         df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
         survey_df = pd.concat(survey_dfs, ignore_index=True) if survey_dfs else pd.DataFrame()
+
+        # Logic to make all CurveID's unique by appending the time of the first point in the curve
+        if "time" in df.columns:
+            df["time"] = pd.to_numeric(df["time"], errors="coerce")
+            df["CurveBlock"] = (df["CurveID"] != df["CurveID"].shift()).cumsum() # Identify curve blocks where CurveID changes
+            first_times = df.groupby("CurveBlock").first()["time"].fillna(0).astype(int)
+            first_times = round(first_times)
+            original_ids = df.groupby("CurveBlock").first()["CurveID"].astype(int)
+            new_ids = first_times.astype(str) + original_ids.astype(str)
+            new_ids = new_ids.astype(int)
+            df["CurveID"] = df["CurveBlock"].map(new_ids)
+            df.drop(columns="CurveBlock", inplace=True) 
 
         st.success(f"✅ Loaded {len(df)} rows from {len(uploaded_files)} files.")
         num_survey = len(survey_dfs)
@@ -1762,5 +1792,5 @@ with tabs[2]:
 
 # ---- PROSPECT MODEL ----
 with tabs[3]:
-    st.header("PROSPECT Model")
-    st.write("This section will include PROSPECT leaf optical property model fitting.")
+    st.header("PROSPECT Model Fitting")
+    st.write("This section will include PROSPECT leaf optical property model fitting. Coming soon.")
