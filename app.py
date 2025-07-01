@@ -166,7 +166,7 @@ with tabs[0]:
             if "survey" in file.name.lower():
                 survey_dfs.append(df)
             else:
-                if "CurveID" not in df.columns:
+                if "CurveID" not in df.columns or pd.isna(df["CurveID"].iloc[0]):
                     df["CurveID"] = numCurve
                 dfs.append(df)
 
@@ -732,8 +732,18 @@ with tabs[1]:
     if uploaded_file:
         if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
+            if "gsw" not in df.columns and "gs" not in df.columns:
+                new_header = df.iloc[0]
+                df = df[1:].copy()       
+                df.columns = new_header  
+                df = df.iloc[1:].reset_index(drop=True)
         else:
             df = pd.read_excel(uploaded_file)
+            if "gsw" not in df.columns and "gs" not in df.columns:
+                new_header = df.iloc[0]
+                df = df[1:].copy()       
+                df.columns = new_header  
+                df = df.iloc[1:].reset_index(drop=True)
 
         st.success(f"✅ Loaded {len(df)} rows from {uploaded_file.name}")
 
@@ -808,11 +818,12 @@ with tabs[1]:
             st.dataframe(st.session_state["filtered_df"].head(), hide_index=True)
 
 
-        species_col = next((col for col in filtered_df.columns if col.lower() == "species"), None)
-        variety_col = next((col for col in filtered_df.columns if col.lower() == "variety"), None)
+        species_col = next((col for col in filtered_df.columns if str(col).lower() == "species"), None)
+        variety_col = next((col for col in filtered_df.columns if str(col).lower() == "variety"), None)
 
         species = filtered_df[species_col].iloc[0] if species_col else ""
         variety = filtered_df[variety_col].iloc[0] if variety_col else ""
+
 
         # ---- MODEL SELECTION ----
         model_name = st.selectbox("Select Stomatal Conductance Model", ["Buckley, Turnbull, Adams (2012)", "Medlyn et al. (2011)",  "Leuning (1995)", "Ball, Woodrow, Berry (1987)"])
@@ -893,6 +904,9 @@ with tabs[1]:
         
         species_to_fit = st.text_input("Enter species name", species)
         variety_to_fit = st.text_input("Enter species variety", variety)
+
+        for col in selected_data.columns:
+            selected_data[col] = pd.to_numeric(selected_data[col], errors="coerce")
 
         
 
